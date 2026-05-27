@@ -6,6 +6,7 @@
 
 import argparse
 import asyncio
+import io
 import json
 import logging
 import os
@@ -15,7 +16,7 @@ from typing import Optional
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .config import load_config, resolve_path
@@ -114,6 +115,39 @@ async def get_slot_status(slot_id: str):
         "bound_at": ps.get("bound_at", ""),
         "user_id": ps.get("user_id", ""),
     }
+
+
+@app.get("/api/v1/pool/qr-image/{slot_id}")
+async def get_qr_image(slot_id: str):
+    """生成二维码 PNG 图片。"""
+    if not hot_pool:
+        raise HTTPException(503, "热池未启动")
+
+    qr_url = hot_pool.get_slot_qr(slot_id)
+    if not qr_url:
+        # 尝试从 state 中找绑定的 profile
+        ps = state.profiles.get(slot_id, {})
+        if ps.get("status") in ("bound_healthy", "bound_unhealthy", "bound_idle"):
+            raise HTTPException(410, "该二维码已绑定")
+        # 不在热池中，返回空
+        available = hot_pool.get_all_slots()
+        if available:
+            qr_url = available[0]["qr_url"]
+            slot_id = available[0]["profile"]
+        if not qr_url:
+            raise HTTPException(503, "当前无可用二维码，请稍后再试")
+
+    try:
+        import qrcode
+        qr = qrcode.QRCode(border=2, box_size=10)
+        qr.add_data(qr_url)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return Response(content=buf.getvalue(), media_type="image/png")
+    except Exception as e:
+        raise HTTPException(500, f"生成二维码失败: {e}")
 
 
 @app.get("/api/v1/pool/stats")

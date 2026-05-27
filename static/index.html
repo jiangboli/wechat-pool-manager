@@ -148,7 +148,7 @@ function showLoading() {
 function showQR(url, slotId) {
   currentSlot = slotId;
   document.getElementById('qrBox').className = 'qr-box loading';
-  document.getElementById('qrContent').innerHTML = '<img src="' + url + '" alt="微信二维码" id="qrImg" onerror="showError(\'二维码加载失败，请手动刷新\')">';
+  document.getElementById('qrContent').innerHTML = '<img src="/api/v1/pool/qr-image/' + slotId + '" alt="微信二维码" id="qrImg" onerror="this.onerror=null;showError(\'二维码加载失败，请手动刷新\')">';
   document.getElementById('statusText').textContent = '等待扫码...';
   document.getElementById('statusText').className = 'status-text waiting';
   document.getElementById('refreshBtn').disabled = false;
