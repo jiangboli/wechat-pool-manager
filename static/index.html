@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hermes 微信绑定</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f5f5f5;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    color: #333;
+  }
+  .container {
+    background: white;
+    border-radius: 16px;
+    padding: 40px;
+    max-width: 420px;
+    width: 90%;
+    text-align: center;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+  }
+  h1 {
+    font-size: 22px;
+    margin-bottom: 8px;
+    color: #222;
+  }
+  .subtitle {
+    color: #888;
+    font-size: 14px;
+    margin-bottom: 24px;
+  }
+  .qr-box {
+    background: #fafafa;
+    border: 2px dashed #ddd;
+    border-radius: 12px;
+    padding: 20px;
+    min-height: 280px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    transition: border-color 0.3s;
+  }
+  .qr-box.loading { border-color: #1890ff; }
+  .qr-box.success { border-color: #52c41a; }
+  .qr-box.error { border-color: #ff4d4f; }
+  .qr-box img {
+    max-width: 200px;
+    max-height: 200px;
+  }
+  .qr-placeholder {
+    color: #bbb;
+    font-size: 14px;
+  }
+  .status-text {
+    margin-top: 16px;
+    font-size: 15px;
+    font-weight: 500;
+  }
+  .status-text.waiting { color: #1890ff; }
+  .status-text.scaned { color: #faad14; }
+  .status-text.success { color: #52c41a; }
+  .status-text.error { color: #ff4d4f; }
+  .countdown {
+    color: #aaa;
+    font-size: 12px;
+    margin-top: 8px;
+  }
+  .step-guide {
+    margin-top: 24px;
+    text-align: left;
+    font-size: 13px;
+    color: #666;
+    line-height: 1.8;
+  }
+  .step-guide span { color: #1890ff; font-weight: bold; }
+  .stats {
+    margin-top: 20px;
+    font-size: 12px;
+    color: #aaa;
+    border-top: 1px solid #eee;
+    padding-top: 16px;
+  }
+  .refresh-btn {
+    margin-top: 12px;
+    padding: 8px 20px;
+    background: #1890ff;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .refresh-btn:hover { background: #40a9ff; }
+  .refresh-btn:disabled { background: #d9d9d9; cursor: not-allowed; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>??? Hermes 微信绑定</h1>
+  <p class="subtitle">扫码绑定你的专属 Hermes 助手</p>
+
+  <div class="qr-box" id="qrBox">
+    <div id="qrContent" class="qr-placeholder">正在获取二维码...</div>
+  </div>
+
+  <div class="status-text" id="statusText">准备中...</div>
+  <div class="countdown" id="countdown"></div>
+
+  <div class="step-guide">
+    <span>1</span> 打开微信「扫一扫」<br>
+    <span>2</span> 扫描上方二维码<br>
+    <span>3</span> 在手机上确认登录 → 自动完成绑定
+  </div>
+
+  <button class="refresh-btn" id="refreshBtn" onclick="refreshQR()">手动刷新</button>
+
+  <div class="stats" id="stats"></div>
+</div>
+
+<script>
+const API_BASE = '';
+let currentSlot = null;
+let qrTimer = null;
+let statusTimer = null;
+let countdownValue = 45;
+
+function showError(msg) {
+  document.getElementById('qrBox').className = 'qr-box error';
+  document.getElementById('qrContent').innerHTML = '<div class="qr-placeholder">' + msg + '</div>';
+  document.getElementById('statusText').textContent = '加载失败';
+  document.getElementById('statusText').className = 'status-text error';
+}
+
+function showLoading() {
+  document.getElementById('qrBox').className = 'qr-box loading';
+  document.getElementById('qrContent').innerHTML = '<div class="qr-placeholder">正在获取二维码...</div>';
+  document.getElementById('statusText').textContent = '获取中...';
+  document.getElementById('statusText').className = 'status-text';
+}
+
+function showQR(url, slotId) {
+  currentSlot = slotId;
+  document.getElementById('qrBox').className = 'qr-box loading';
+  document.getElementById('qrContent').innerHTML = '<img src="' + url + '" alt="微信二维码" id="qrImg" onerror="showError(\'二维码加载失败，请手动刷新\')">';
+  document.getElementById('statusText').textContent = '等待扫码...';
+  document.getElementById('statusText').className = 'status-text waiting';
+  document.getElementById('refreshBtn').disabled = false;
+}
+
+function showScaned() {
+  document.getElementById('statusText').textContent = '已扫码！请在手机上确认...';
+  document.getElementById('statusText').className = 'status-text scaned';
+}
+
+function showSuccess() {
+  document.getElementById('qrBox').className = 'qr-box success';
+  document.getElementById('qrContent').innerHTML = '<div style="font-size:48px;color:#52c41a;">&#10004;</div>';
+  document.getElementById('statusText').textContent = '绑定成功！可以开始使用了 ?';
+  document.getElementById('statusText').className = 'status-text success';
+  document.getElementById('refreshBtn').disabled = true;
+  if (qrTimer) clearInterval(qrTimer);
+  if (statusTimer) clearInterval(statusTimer);
+}
+
+async function fetchQR() {
+  try {
+    const resp = await fetch(API_BASE + '/api/v1/pool/available');
+    if (!resp.ok) {
+      const text = await resp.text();
+      showError('当前无可用二维码，请稍后再试');
+      return;
+    }
+    const data = await resp.json();
+    showQR(data.qr_url, data.slot_id);
+    countdownValue = 45;
+    startPollingStatus(data.slot_id);
+  } catch (e) {
+    showError('网络错误，请检查连接');
+  }
+}
+
+async function pollStatus(slotId) {
+  try {
+    const resp = await fetch(API_BASE + '/api/v1/pool/status/' + slotId);
+    if (!resp.ok) return;
+    const data = await resp.json();
+
+    if (data.bound) {
+      showSuccess();
+      return;
+    }
+
+    if (data.qr_status === 'scaned') {
+      showScaned();
+    }
+  } catch (e) {
+    // silent
+  }
+}
+
+function startPollingStatus(slotId) {
+  if (statusTimer) clearInterval(statusTimer);
+  statusTimer = setInterval(() => pollStatus(slotId), 2000);
+}
+
+function startCountdown() {
+  if (qrTimer) clearInterval(qrTimer);
+  qrTimer = setInterval(() => {
+    countdownValue--;
+    if (countdownValue <= 0) {
+      // 自动刷新二维码
+      refreshQR();
+    }
+    document.getElementById('countdown').textContent = countdownValue + 's 后自动刷新';
+  }, 1000);
+}
+
+async function refreshQR() {
+  if (document.getElementById('refreshBtn').disabled) return;
+  showLoading();
+  if (statusTimer) clearInterval(statusTimer);
+  if (qrTimer) clearInterval(qrTimer);
+  await fetchQR();
+  startCountdown();
+}
+
+async function fetchStats() {
+  try {
+    const resp = await fetch(API_BASE + '/api/v1/pool/stats');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    document.getElementById('stats').textContent =
+      '已绑定 ' + data.bound + ' / 总共 ' + data.total_profiles + ' 个';
+  } catch (e) {}
+}
+
+// 启动
+showLoading();
+fetchQR();
+startCountdown();
+fetchStats();
+setInterval(fetchStats, 10000);
+</script>
+</body>
+</html>

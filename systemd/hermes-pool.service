@@ -1,0 +1,24 @@
+[Unit]
+Description=Hermes WeChat Gateway Pool Manager
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=%h/.hermes/hermes-agent/venv/bin/python \
+  -m pool_manager.service \
+  --config %h/.hermes/wechat-pool/config.yaml
+WorkingDirectory=%h/.hermes/wechat-pool/
+Environment="PATH=%h/.hermes/hermes-agent/venv/bin:%h/.hermes/node/bin:%h/.local/bin:%h/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="VIRTUAL_ENV=%h/.hermes/hermes-agent/venv"
+Restart=on-failure
+RestartSec=10
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=90
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
