@@ -153,30 +153,6 @@ async def get_qr_image(slot_id: str):
         raise HTTPException(500, f"生成二维码失败: {e}")
 
 
-@app.get("/api/v1/pool/hot-slots")
-async def get_hot_slots():
-    """秒杀页面：返回热池所有槽位的实时状态。"""
-    if not hot_pool:
-        raise HTTPException(503, "热池未启动")
-
-    slots = hot_pool.get_all_slots()
-    result = []
-    for s in slots:
-        profile = s["profile"]
-        ps = state.profiles.get(profile, {})
-        ps_status = ps.get("status", "")
-        result.append({
-            "slot_id": profile,
-            "qr_url": s["qr_url"],
-            "slot_status": s["status"],  # idle/waiting/scaned/confirmed/expired
-            "refreshed_at": s.get("refreshed_at", ""),
-            "bound": ps_status.startswith("bound_"),
-            "profile_bound": ps_status.startswith("bound_"),
-            "user_id": ps.get("user_id", ""),
-        })
-    return {"slots": result, "total": len(result), "hot_pool_size": len(slots)}
-
-
 @app.get("/api/v1/pool/stats")
 async def get_pool_stats():
     """池统计信息。"""
