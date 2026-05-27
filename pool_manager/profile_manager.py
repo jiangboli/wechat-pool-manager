@@ -13,6 +13,10 @@ HERMES_HOME = os.environ.get(
 
 
 def _hermes_bin() -> str:
+    # 首选 ~/.local/bin/hermes（标准安装路径），回退 ~/.hermes/bin/hermes
+    local_bin = os.path.expanduser("~/.local/bin/hermes")
+    if os.path.exists(local_bin):
+        return local_bin
     return os.path.expanduser("~/.hermes/bin/hermes")
 
 
