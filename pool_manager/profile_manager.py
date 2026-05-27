@@ -101,8 +101,6 @@ def set_weixin_credentials(profile: str, account_id: str, token: str, base_url: 
 
 _SAFE_TOOLSETS = [
     "web",              # 网络搜索
-    "session_search",   # 会话历史搜索
-    "memory",           # 个人记忆
     "clarify",          # 提问澄清
     "todo",             # 待办管理
     "vision",           # 图片分析
@@ -117,6 +115,8 @@ _DISABLED_TOOLSETS = [
     "skills",           # 技能管理 — 禁止
     "messaging",        # 跨平台消息 — 禁止
     "browser",          # 浏览器自动化 — 禁止
+    "session_search",   # 跨会话搜索 — 禁止（用户隔离）
+    "memory",           # 持久记忆 — 禁止（用户隔离）
 ]
 
 
