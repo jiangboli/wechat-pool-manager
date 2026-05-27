@@ -207,8 +207,23 @@ python3 "$PROJECT_DIR/scripts/create_profiles.py" \
   --count "$TOTAL" --prefix "$PREFIX"
 
 # ── 启动 Pool Manager ────────────────────────────────────────────────────
-echo "[6/6] ? 启动 Pool Manager..."
-systemctl --user enable hermes-pool 2>/dev/null || true
+echo "[6/6] ? 设置自启动并启动 Pool Manager..."
+
+# 启用 systemd 用户服务（开机自启）
+systemctl --user enable hermes-pool 2>&1 || echo "  ⚠️ enable 失败，可能需要手动处理"
+
+# 启用 linger——用户退出登录后 systemd 用户服务继续运行
+# 这是开机自启的必要条件
+if command -v loginctl &>/dev/null; then
+  if loginctl show-user "$USER" 2>/dev/null | grep -q "Linger=no"; then
+    echo "  ? 启用 linger（用户退出后服务持续运行）..."
+    sudo loginctl enable-linger "$USER" 2>/dev/null && echo "  ✅ linger 已启用" || echo "  ⚠️ 需要手动执行: sudo loginctl enable-linger $USER"
+  else
+    echo "  ✅ linger 已启用"
+  fi
+fi
+
+# 启动服务
 systemctl --user restart hermes-pool
 
 echo ""
@@ -218,9 +233,13 @@ echo ""
 echo "   Pool Manager:  http://$HOST:$PORT"
 echo "   前端页面:      http://$HOST:$PORT"
 echo "   健康检查:      http://$HOST:$PORT/health"
+echo "   自启动:        ✅ 已设置（随系统开机启动）"
 echo ""
-echo "   查看日志:"
-echo "     journalctl --user -u hermes-pool -f"
+echo "   管理命令:"
+echo "     systemctl --user status hermes-pool    # 查看状态"
+echo "     systemctl --user restart hermes-pool   # 重启"
+echo "     systemctl --user stop hermes-pool      # 停止"
+echo "     journalctl --user -u hermes-pool -f    # 查看日志"
 echo "     tail -f $HOME/.hermes/wechat-pool/logs/pool_manager.log"
 echo ""
 echo "   ⚠️ 如果端口 $PORT 被占用，用 --port 指定其他端口"
