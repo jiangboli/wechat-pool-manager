@@ -71,8 +71,9 @@ def profile_exists(name: str) -> bool:
     return os.path.isdir(get_profile_dir(name))
 
 
-def set_weixin_credentials(profile: str, account_id: str, token: str, base_url: str = "") -> bool:
-    """向 profile 写入 WeChat 凭证和配置（含权限限制）。"""
+def set_weixin_credentials(profile: str, account_id: str, token: str,
+                           base_url: str = "", user_id: str = "") -> bool:
+    """向 profile 写入 WeChat 凭证和配置（含权限限制 + home channel）。"""
     profile_dir = get_profile_dir(profile)
 
     # 1. 更新 .env
@@ -82,7 +83,8 @@ def set_weixin_credentials(profile: str, account_id: str, token: str, base_url: 
             lines = f.readlines()
     except Exception:
         lines = []
-    keep = {"WEIXIN_ACCOUNT_ID=", "WEIXIN_TOKEN=", "WEIXIN_BASE_URL=", "WEIXIN_ALLOW_ALL_USERS="}
+    keep = {"WEIXIN_ACCOUNT_ID=", "WEIXIN_TOKEN=", "WEIXIN_BASE_URL=",
+            "WEIXIN_ALLOW_ALL_USERS=", "WEIXIN_HOME_CHANNEL="}
     lines = [l for l in lines if not any(l.startswith(k) for k in keep)]
     lines.append("")
     lines.append("# WeChat credentials (auto-set by pool manager)")
@@ -91,6 +93,8 @@ def set_weixin_credentials(profile: str, account_id: str, token: str, base_url: 
     lines.append("WEIXIN_ALLOW_ALL_USERS=true")
     if base_url:
         lines.append("WEIXIN_BASE_URL=" + base_url)
+    if user_id:
+        lines.append("WEIXIN_HOME_CHANNEL=" + user_id)
     with open(env_path, "w") as f:
         for line in lines:
             f.write(line + "\n")
