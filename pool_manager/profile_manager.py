@@ -111,6 +111,29 @@ def set_weixin_credentials(profile: str, account_id: str, token: str, base_url: 
             wx["extra"] = {}
         wx["extra"]["dm_policy"] = "open"
         wx["extra"]["group_policy"] = "disabled"
+        # 限制微信用户的工具集 — 只允许安全工具，禁止 terminal/file/代码执行等
+        cfg["platform_toolsets"] = cfg.get("platform_toolsets", {})
+        cfg["platform_toolsets"]["weixin"] = [
+            "web",          # 网络搜索
+            "session_search", # 会话历史搜索
+            "memory",       # 个人记忆
+            "clarify",      # 提问澄清
+            "todo",         # 待办管理
+            "vision",       # 图片分析
+        ]
+        # 额外禁用层 — 即使未来有新工具集默认启用，也被拦截
+        if "agent" not in cfg:
+            cfg["agent"] = {}
+        cfg["agent"]["disabled_toolsets"] = [
+            "terminal",     # shell 访问 — 禁止
+            "file",         # 文件操作 — 禁止
+            "code_execution", # Python 执行 — 禁止
+            "cronjob",       # 定时任务 — 禁止
+            "delegation",    # 子代理 — 禁止
+            "skills",        # 技能管理 — 禁止
+            "messaging",     # 跨平台消息 — 禁止
+            "browser",       # 浏览器自动化 — 禁止
+        ]
         with open(cfg_path, "w") as f:
             yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
     except Exception:
