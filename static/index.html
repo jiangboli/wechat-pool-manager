@@ -449,7 +449,9 @@ const API_BASE = '';
 let currentSlot = null;
 let qrTimer = null;
 let statusTimer = null;
-let countdownValue = 35;
+let imageRefreshTimer = null;
+let countdownValue = 50;
+let lastQrUrl = '';
 
 function showError(msg) {
   const qrBox = document.getElementById('qrBox');
@@ -469,14 +471,24 @@ function showLoading() {
 
 function showQR(url, slotId) {
   currentSlot = slotId;
+  lastQrUrl = url;
   const qrBox = document.getElementById('qrBox');
   qrBox.className = 'qr-box';
   qrBox.classList.add('pulsing');
   document.getElementById('qrContent').innerHTML =
-    '<img src="/api/v1/pool/qr-image/' + slotId +
+    '<img src="/api/v1/pool/qr-image/' + slotId + '?t=' + Date.now() +
     '" alt="微信二维码" id="qrImg" onerror="this.onerror=null;showError(\'二维码加载失败\')">';
   setStatus('等待扫码...', 'waiting');
   document.getElementById('refreshBtn').disabled = false;
+}
+
+function refreshSlotImage() {
+  // 同 slot 刷新图片（不换 slot_id），带缓存破坏
+  if (!currentSlot) return;
+  const img = document.getElementById('qrImg');
+  if (img) {
+    img.src = '/api/v1/pool/qr-image/' + currentSlot + '?t=' + Date.now();
+  }
 }
 
 function showScanned() {
@@ -492,6 +504,7 @@ function showSuccess() {
   document.getElementById('refreshBtn').disabled = true;
   if (qrTimer) clearInterval(qrTimer);
   if (statusTimer) clearInterval(statusTimer);
+  if (imageRefreshTimer) clearInterval(imageRefreshTimer);
 }
 
 function setStatus(text, type) {
@@ -512,7 +525,7 @@ async function fetchQR() {
     }
     const data = await resp.json();
     showQR(data.qr_url, data.slot_id);
-    countdownValue = 35;
+    countdownValue = 50;
     startPollingStatus(data.slot_id);
   } catch (e) {
     showError('网络错误，请检查连接');
@@ -525,7 +538,18 @@ async function pollStatus(slotId) {
     if (!resp.ok) return;
     const data = await resp.json();
     if (data.bound) { showSuccess(); return; }
-    if (data.qr_status === 'scaned') showScanned();
+    if (data.qr_status === 'scaned') { showScanned(); return; }
+    // 检测二维码过期→自动重载同 slot 图片
+    if (data.qr_status === 'expired') {
+      setStatus('二维码已过期，正在刷新...', 'error');
+      setTimeout(refreshSlotImage, 500);
+      return;
+    }
+    // 检测后端是否刷新了二维码（同 slot，新 qr_url）
+    if (data.qr_url && data.qr_url !== lastQrUrl) {
+      lastQrUrl = data.qr_url;
+      refreshSlotImage();
+    }
   } catch (e) {}
 }
 
@@ -544,14 +568,26 @@ function startCountdown() {
   }, 1000);
 }
 
+// 每 25 秒刷新同 slot 二维码图片（防缓存过期）
+function startImageRefresh() {
+  if (imageRefreshTimer) clearInterval(imageRefreshTimer);
+  imageRefreshTimer = setInterval(() => {
+    if (currentSlot && document.getElementById('qrImg')) {
+      refreshSlotImage();
+    }
+  }, 25000);
+}
+
 async function refreshQR() {
   if (document.getElementById('refreshBtn').disabled) return;
   showLoading();
   if (statusTimer) clearInterval(statusTimer);
   if (qrTimer) clearInterval(qrTimer);
+  if (imageRefreshTimer) clearInterval(imageRefreshTimer);
   document.getElementById('countdown').textContent = '刷新中...';
   await fetchQR();
   startCountdown();
+  startImageRefresh();
 }
 
 async function fetchStats() {
@@ -568,6 +604,7 @@ async function fetchStats() {
 showLoading();
 fetchQR();
 startCountdown();
+startImageRefresh();
 fetchStats();
 setInterval(fetchStats, 10000);
 </script>
