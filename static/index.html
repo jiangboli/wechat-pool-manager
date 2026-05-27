@@ -103,7 +103,7 @@
 </head>
 <body>
 <div class="container">
-  <h1>??? Hermes 微信绑定</h1>
+  <h1>Hermes 微信绑定</h1>
   <p class="subtitle">扫码绑定你的专属 Hermes 助手</p>
 
   <div class="qr-box" id="qrBox">
@@ -162,7 +162,7 @@ function showScaned() {
 function showSuccess() {
   document.getElementById('qrBox').className = 'qr-box success';
   document.getElementById('qrContent').innerHTML = '<div style="font-size:48px;color:#52c41a;">&#10004;</div>';
-  document.getElementById('statusText').textContent = '绑定成功！可以开始使用了 ?';
+  document.getElementById('statusText').textContent = '绑定成功！可以开始使用了 \u2728';
   document.getElementById('statusText').className = 'status-text success';
   document.getElementById('refreshBtn').disabled = true;
   if (qrTimer) clearInterval(qrTimer);
