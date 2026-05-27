@@ -83,16 +83,20 @@ install_deps() {
     "$HERMES_VENV/bin/pip" install -r "$PROJECT_DIR/requirements.txt" -q
     return 0
   fi
-  # 方式 2: uv 安装（Hermes 新版本默认用 uv）
+  # 方式 2: uv 安装（指定 Hermes venv 路径）
   if command -v uv &>/dev/null; then
-    echo "  使用 uv..."
-    uv pip install -r "$PROJECT_DIR/requirements.txt" -q
-    return 0
+    if [ -d "$HERMES_VENV" ]; then
+      echo "  使用 uv (venv=$HERMES_VENV)..."
+      VIRTUAL_ENV="$HERMES_VENV" uv pip install -r "$PROJECT_DIR/requirements.txt" -q && return 0
+    fi
+    echo "  使用 uv (--system)..."
+    uv pip install --system -r "$PROJECT_DIR/requirements.txt" -q && return 0
   fi
   if [ -f "$HERMES_VENV/bin/uv" ]; then
-    echo "  使用 Hermes venv uv..."
-    "$HERMES_VENV/bin/uv" pip install -r "$PROJECT_DIR/requirements.txt" -q
-    return 0
+    echo "  使用 Hermes venv uv (venv)..."
+    VIRTUAL_ENV="$HERMES_VENV" "$HERMES_VENV/bin/uv" pip install -r "$PROJECT_DIR/requirements.txt" -q && return 0
+    echo "  使用 Hermes venv uv (--system)..."
+    "$HERMES_VENV/bin/uv" pip install --system -r "$PROJECT_DIR/requirements.txt" -q && return 0
   fi
   # 方式 3: 系统 pip3
   if command -v pip3 &>/dev/null; then
