@@ -304,6 +304,21 @@ async def startup():
                 len(existing),
                 sum(1 for p in state.profiles.values() if p.get("status") == "available"))
 
+    # 迁移旧 profile 的 config.yaml — 补上工具权限限制
+    fixed = pm.migrate_profile_configs(prefix)
+    if fixed:
+        logger.info("已修补 %d 个旧 profile 的 config.yaml（添加工具权限限制）", len(fixed))
+        # 重启已修补的 gateway 使新配置生效
+        for name in fixed:
+            try:
+                ok, msg = gm.restart(name)
+                if ok:
+                    logger.info("  - %s gateway 已重启", name)
+                else:
+                    logger.warning("  - %s gateway 重启失败: %s", name, msg)
+            except Exception as e:
+                logger.warning("  - %s gateway 重启异常: %s", name, e)
+
     # 启动热池
     hot_pool = HotPool(config, state, pm, gm)
     pool_task = asyncio.create_task(hot_pool.start())

@@ -1,20 +1,19 @@
-"""Profile 管理：创建、查找、状态跟踪。"""
+"""Profile 管理器——创建、列表、绑定、凭证读写。"""
 
 import os
 import subprocess
 import sys
-from typing import List, Optional
+from typing import Dict, List, Optional
 
-from .config import resolve_path
-
-HERMES_HOME = os.path.expanduser("~/.hermes")
+# 从启动模块获取 HERMES_HOME
+HERMES_HOME = os.environ.get(
+    "HERMES_HOME",
+    os.path.expanduser("~/.hermes")
+)
 
 
 def _hermes_bin() -> str:
-    candidate = os.path.join(HERMES_HOME, "bin", "hermes")
-    if os.path.exists(candidate):
-        return candidate
-    return "hermes"
+    return os.path.expanduser("~/.hermes/bin/hermes")
 
 
 def create_profile(name: str, clone_from: str = "") -> bool:
@@ -69,7 +68,7 @@ def profile_exists(name: str) -> bool:
 
 
 def set_weixin_credentials(profile: str, account_id: str, token: str, base_url: str = "") -> bool:
-    """向 profile 写入 WeChat 凭证和配置。"""
+    """向 profile 写入 WeChat 凭证和配置（含权限限制）。"""
     profile_dir = get_profile_dir(profile)
 
     # 1. 更新 .env
@@ -92,54 +91,107 @@ def set_weixin_credentials(profile: str, account_id: str, token: str, base_url: 
         for line in lines:
             f.write(line + "\n")
 
-    # 2. 更新 config.yaml
+    # 2. 更新 config.yaml（含工具权限限制）
+    _write_weixin_config(profile_dir)
+
+    return True
+
+
+# ── 微信安全工具集配置 ──────────────────────────────────────────────────
+
+_SAFE_TOOLSETS = [
+    "web",              # 网络搜索
+    "session_search",   # 会话历史搜索
+    "memory",           # 个人记忆
+    "clarify",          # 提问澄清
+    "todo",             # 待办管理
+    "vision",           # 图片分析
+]
+
+_DISABLED_TOOLSETS = [
+    "terminal",         # shell 访问 — 禁止
+    "file",             # 文件操作 — 禁止
+    "code_execution",   # Python 执行 — 禁止
+    "cronjob",          # 定时任务 — 禁止
+    "delegation",       # 子代理 — 禁止
+    "skills",           # 技能管理 — 禁止
+    "messaging",        # 跨平台消息 — 禁止
+    "browser",          # 浏览器自动化 — 禁止
+]
+
+
+def _write_weixin_config(profile_dir: str):
+    """写入/更新 profile 的 config.yaml，包含微信平台配置和工具权限限制。"""
+    import yaml
     cfg_path = os.path.join(profile_dir, "config.yaml")
     try:
-        import yaml
         if os.path.exists(cfg_path):
             with open(cfg_path, "r") as f:
                 cfg = yaml.safe_load(f) or {}
         else:
             cfg = {}
-        if "platforms" not in cfg:
-            cfg["platforms"] = {}
-        if "weixin" not in cfg["platforms"]:
-            cfg["platforms"]["weixin"] = {}
-        wx = cfg["platforms"]["weixin"]
-        wx["enabled"] = True
-        if "extra" not in wx:
-            wx["extra"] = {}
-        wx["extra"]["dm_policy"] = "open"
-        wx["extra"]["group_policy"] = "disabled"
-        # 限制微信用户的工具集 — 只允许安全工具，禁止 terminal/file/代码执行等
-        cfg["platform_toolsets"] = cfg.get("platform_toolsets", {})
-        cfg["platform_toolsets"]["weixin"] = [
-            "web",          # 网络搜索
-            "session_search", # 会话历史搜索
-            "memory",       # 个人记忆
-            "clarify",      # 提问澄清
-            "todo",         # 待办管理
-            "vision",       # 图片分析
-        ]
-        # 额外禁用层 — 即使未来有新工具集默认启用，也被拦截
-        if "agent" not in cfg:
-            cfg["agent"] = {}
-        cfg["agent"]["disabled_toolsets"] = [
-            "terminal",     # shell 访问 — 禁止
-            "file",         # 文件操作 — 禁止
-            "code_execution", # Python 执行 — 禁止
-            "cronjob",       # 定时任务 — 禁止
-            "delegation",    # 子代理 — 禁止
-            "skills",        # 技能管理 — 禁止
-            "messaging",     # 跨平台消息 — 禁止
-            "browser",       # 浏览器自动化 — 禁止
-        ]
+    except Exception:
+        cfg = {}
+
+    # 平台配置
+    cfg.setdefault("platforms", {})
+    cfg["platforms"].setdefault("weixin", {})
+    wx = cfg["platforms"]["weixin"]
+    wx["enabled"] = True
+    wx.setdefault("extra", {})
+    wx["extra"]["dm_policy"] = "open"
+    wx["extra"]["group_policy"] = "disabled"
+
+    # 工具权限白名单
+    cfg.setdefault("platform_toolsets", {})
+    cfg["platform_toolsets"]["weixin"] = _SAFE_TOOLSETS
+
+    # 工具权限黑名单（双重保险）
+    cfg.setdefault("agent", {})
+    cfg["agent"]["disabled_toolsets"] = _DISABLED_TOOLSETS
+
+    try:
         with open(cfg_path, "w") as f:
             yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
     except Exception:
         pass
-    return True
 
+
+def migrate_profile_configs(prefix: str = "weixin-") -> List[str]:
+    """
+    扫描所有已绑定的 profile，确保 config.yaml 包含工具权限限制。
+    旧 profile（从早期版本绑定）会自动补上新配置。
+    返回被修复的 profile 名称列表（可用于后续重启 gateway）。
+    """
+    import yaml
+    fixed = []
+    for name in list_profiles(prefix):
+        creds = get_weixin_credentials(name)
+        if not creds or not creds.get("token"):
+            continue  # 未绑定，跳过
+
+        profile_dir = get_profile_dir(name)
+        cfg_path = os.path.join(profile_dir, "config.yaml")
+
+        try:
+            with open(cfg_path, "r") as f:
+                cfg = yaml.safe_load(f) or {}
+        except Exception:
+            cfg = {}
+
+        # 检查是否已有工具限制（检查 weixin 平台的白名单是否存在）
+        pts = cfg.get("platform_toolsets", {})
+        existing = pts.get("weixin", [])
+        if existing == _SAFE_TOOLSETS:
+            continue  # 已是最新，跳过
+
+        _write_weixin_config(profile_dir)
+        fixed.append(name)
+
+    return fixed
+
+
+# ── 查询 ────────────────────────────────────────────────────────────────
 
 def get_weixin_credentials(profile: str) -> Optional[dict]:
     env_path = os.path.join(get_profile_dir(profile), ".env")
