@@ -2,8 +2,8 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Just Claw Do It — 抢虾苗大战</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Just Claw Do It</title>
 <style>
   *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -20,9 +20,8 @@
     --text-secondary: rgba(255, 255, 255, 0.55);
     --text-muted: rgba(255, 255, 255, 0.30);
     --success: #34d399;
-    --warning: #fbbf24;
     --error: #f87171;
-    --scan-color: #fbbf24;
+    --scan-warn: #fbbf24;
     --radius: 20px;
     --radius-sm: 12px;
   }
@@ -31,9 +30,12 @@
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
     background: var(--bg-1);
     min-height: 100vh;
-    padding: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    overflow: hidden;
     position: relative;
-    overflow-x: hidden;
   }
 
   /* Background orbs */
@@ -46,381 +48,340 @@
     z-index: 0;
   }
   body::before {
-    width: 500px; height: 500px;
-    background: radial-gradient(circle, rgba(99, 102, 241, 0.12), transparent);
-    top: -150px; right: -80px;
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, rgba(99, 102, 241, 0.15), transparent);
+    top: -200px; right: -100px;
   }
   body::after {
-    width: 400px; height: 400px;
-    background: radial-gradient(circle, rgba(245, 158, 11, 0.07), transparent);
-    bottom: -100px; left: -80px;
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, rgba(245, 158, 11, 0.08), transparent);
+    bottom: -150px; left: -100px;
   }
 
+  /* Subtle grain overlay */
   .grain {
-    position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: 0.03;
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.03;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
     background-size: 256px 256px;
   }
 
-  .container { position: relative; z-index: 1; max-width: 780px; margin: 0 auto; }
-
-  /* ── Header ── */
-  .header {
-    text-align: center;
-    margin-bottom: 20px;
+  .container {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 400px;
   }
+
+  /* Card */
+  .card {
+    background: var(--card-bg);
+    backdrop-filter: blur(24px) saturate(1.4);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius);
+    padding: 36px 28px 32px;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.04),
+      0 8px 32px rgba(0,0,0,0.4),
+      0 2px 8px rgba(0,0,0,0.2),
+      0 0 60px var(--card-glow);
+    transition: box-shadow 0.6s ease;
+    text-align: center;
+  }
+
+  /* Header */
   .logo {
-    width: 44px; height: 44px; margin: 0 auto 12px;
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 16px;
     background: linear-gradient(135deg, var(--accent), #d97706);
     border-radius: 14px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
     box-shadow: 0 4px 16px var(--accent-glow);
   }
+
   h1 {
-    font-size: 20px; font-weight: 600; letter-spacing: -0.01em;
-    color: var(--text-primary); margin-bottom: 2px;
-  }
-  .subtitle {
-    font-size: 13px; color: var(--text-secondary); font-weight: 400;
-  }
-
-  /* ── Seckill Meter ── */
-  .meter {
-    background: var(--card-bg);
-    backdrop-filter: blur(16px) saturate(1.3);
-    -webkit-backdrop-filter: blur(16px) saturate(1.3);
-    border: 1px solid var(--card-border);
-    border-radius: var(--radius-sm);
-    padding: 16px 20px;
-    margin-bottom: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .meter-left { display: flex; align-items: center; gap: 10px; }
-  .meter-icon { font-size: 20px; }
-  .meter-text { font-size: 14px; color: var(--text-primary); font-weight: 500; }
-  .meter-text strong { color: var(--success); }
-  .meter-badge {
-    background: var(--accent-subtle);
-    border: 1px solid rgba(245, 158, 11, 0.2);
-    border-radius: 20px;
-    padding: 4px 14px;
-    font-size: 12px;
-    color: var(--accent);
-    font-weight: 500;
-    white-space: nowrap;
-  }
-
-  /* ── News Ticker ── */
-  .ticker-wrap {
-    background: rgba(251, 191, 36, 0.06);
-    border: 1px solid rgba(251, 191, 36, 0.1);
-    border-radius: 8px;
-    padding: 8px 14px;
-    margin-bottom: 14px;
-    min-height: 36px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    overflow: hidden;
-  }
-  .ticker-icon { font-size: 14px; flex-shrink: 0; }
-  .ticker-text {
-    font-size: 12px;
-    color: var(--warning);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    flex: 1;
-  }
-  .ticker-text.animate {
-    animation: tickerSlide 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  @keyframes tickerSlide {
-    0% { opacity: 0; transform: translateY(8px); }
-    100% { opacity: 1; transform: translateY(0); }
-  }
-
-  /* ── Slot Grid ── */
-  .slot-grid {
-    display: grid;
-    gap: 12px;
-    grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
-    margin-bottom: 14px;
-  }
-
-  /* ── Slot Card ── */
-  .slot-card {
-    background: var(--card-bg);
-    backdrop-filter: blur(16px) saturate(1.3);
-    -webkit-backdrop-filter: blur(16px) saturate(1.3);
-    border: 1px solid var(--card-border);
-    border-radius: var(--radius-sm);
-    padding: 14px 12px 12px;
-    text-align: center;
-    transition: all 0.4s ease;
-    position: relative;
-    overflow: hidden;
-    min-width: 0;
-  }
-
-  .slot-card::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    opacity: 0;
-    transition: opacity 0.5s ease;
-    pointer-events: none;
-    border-radius: var(--radius-sm);
-  }
-
-  /* Status glow overlays */
-  .slot-card.state-waiting {
-    border-color: rgba(245, 158, 11, 0.25);
-    box-shadow: 0 0 20px rgba(245, 158, 11, 0.06), inset 0 0 20px rgba(245, 158, 11, 0.03);
-  }
-  .slot-card.state-waiting::before {
-    opacity: 1;
-    background: radial-gradient(ellipse at center, rgba(245, 158, 11, 0.05), transparent);
-  }
-  .slot-card.state-waiting .slot-qr-box {
-    animation: qrPulse 2.5s ease-in-out infinite;
-  }
-
-  .slot-card.state-scaned {
-    border-color: rgba(251, 191, 36, 0.4);
-    box-shadow: 0 0 25px rgba(251, 191, 36, 0.1), 0 0 0 1px rgba(251, 191, 36, 0.2);
-  }
-  .slot-card.state-scaned::before {
-    opacity: 1;
-    background: radial-gradient(ellipse at center, rgba(251, 191, 36, 0.08), transparent);
-  }
-  .slot-card.state-scaned .slot-qr-box {
-    animation: scanFlash 0.6s ease-in-out 3;
-  }
-  @keyframes scanFlash {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
-    50% { box-shadow: 0 0 0 8px rgba(251, 191, 36, 0.2); }
-  }
-
-  .slot-card.state-bound {
-    border-color: rgba(52, 211, 153, 0.3);
-    box-shadow: 0 0 30px rgba(52, 211, 153, 0.08), inset 0 0 20px rgba(52, 211, 153, 0.03);
-  }
-  .slot-card.state-bound::before {
-    opacity: 1;
-    background: radial-gradient(ellipse at center, rgba(52, 211, 153, 0.06), transparent);
-  }
-
-  .slot-card.state-expired {
-    border-color: rgba(248, 113, 113, 0.2);
-    opacity: 0.6;
-  }
-
-  /* Slot number */
-  .slot-num {
-    font-size: 12px;
+    font-size: 22px;
     font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+
+  .subtitle {
+    font-size: 14px;
     color: var(--text-secondary);
     margin-bottom: 8px;
-    letter-spacing: 0.02em;
+    font-weight: 400;
   }
 
-  /* QR box inside slot */
-  .slot-qr-box {
-    width: 120px; height: 120px;
-    margin: 0 auto 8px;
-    border-radius: 8px;
+  .prompt-text {
+    font-size: 12px;
+    color: var(--accent);
+    margin-bottom: 24px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    opacity: 0.85;
+    animation: promptFade 2s ease-in-out infinite alternate;
+  }
+
+  @keyframes promptFade {
+    0% { opacity: 0.65; }
+    100% { opacity: 1; }
+  }
+
+  /* QR Box */
+  .qr-wrapper {
+    position: relative;
+    margin: 0 auto 20px;
+    width: 220px;
+    height: 220px;
+  }
+
+  .qr-box {
+    width: 100%;
+    height: 100%;
+    border-radius: var(--radius-sm);
     background: white;
     display: flex;
     align-items: center;
     justify-content: center;
     position: relative;
     overflow: hidden;
-    transition: box-shadow 0.5s ease;
+    transition: box-shadow 0.5s ease, transform 0.3s ease;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.3);
   }
-  .slot-qr-box img {
-    width: 105px; height: 105px;
+
+  .qr-box img {
+    width: 180px;
+    height: 180px;
     display: block;
     image-rendering: pixelated;
   }
-  .slot-qr-box .qr-placeholder {
-    color: #999; font-size: 11px; text-align: center; line-height: 1.4; padding: 10px;
+
+  .qr-placeholder {
+    color: #999;
+    font-size: 13px;
+    text-align: center;
+    line-height: 1.5;
+    padding: 20px;
   }
-  .slot-qr-box .qr-skeleton {
-    width: 105px; height: 105px;
-    border-radius: 6px;
+
+  /* QR breathing pulse */
+  .qr-box.pulsing {
+    animation: qrPulse 2.5s ease-in-out infinite;
+  }
+
+  @keyframes qrPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.15); }
+    50% { box-shadow: 0 0 0 12px rgba(245, 158, 11, 0); }
+  }
+
+  .qr-box.success {
+    box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.3), 0 0 40px rgba(52, 211, 153, 0.1);
+  }
+  .qr-box.success img { display: none; }
+  .qr-box .success-icon {
+    display: none;
+    font-size: 56px;
+    line-height: 1;
+  }
+  .qr-box.success .success-icon { display: block; animation: successPop 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+  @keyframes successPop {
+    0% { transform: scale(0); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  .qr-box.error {
+    box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.2);
+  }
+
+  /* Outer ring decoration */
+  .qr-wrapper::before {
+    content: '';
+    position: absolute;
+    inset: -6px;
+    border-radius: calc(var(--radius-sm) + 6px);
+    border: 1px solid rgba(255,255,255,0.06);
+    pointer-events: none;
+  }
+
+  /* Status */
+  .status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 28px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    transition: color 0.3s;
+  }
+
+  .status .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    transition: background 0.3s;
+  }
+  .status .dot.pulse {
+    animation: dotPulse 1.2s ease-in-out infinite;
+  }
+
+  @keyframes dotPulse {
+    0%, 100% { opacity: 0.3; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.3); }
+  }
+
+  .status.waiting { color: var(--accent); }
+  .status.waiting .dot { background: var(--accent); }
+
+  .status.scanned { color: var(--scan-warn); }
+  .status.scanned .dot { background: var(--scan-warn); }
+
+  .status.success { color: var(--success); }
+  .status.success .dot { background: var(--success); }
+
+  .status.error { color: var(--error); }
+  .status.error .dot { background: var(--error); }
+
+  .countdown {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+    font-variant-numeric: tabular-nums;
+    min-height: 18px;
+  }
+
+  /* Steps */
+  .steps {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 20px;
+  }
+
+  .step {
+    flex: 1;
+    padding: 10px 8px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.04);
+    text-align: center;
+  }
+
+  .step-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--accent-subtle);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .step-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.3;
+  }
+
+  /* Refresh button */
+  .refresh-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 24px;
+    background: rgba(255,255,255,0.06);
+    color: var(--text-secondary);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: inherit;
+  }
+
+  .refresh-btn:hover:not(:disabled) {
+    background: rgba(255,255,255,0.10);
+    color: var(--text-primary);
+    border-color: rgba(255,255,255,0.15);
+  }
+
+  .refresh-btn:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  .refresh-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  .refresh-btn .icon {
+    font-size: 14px;
+    transition: transform 0.4s ease;
+  }
+  .refresh-btn:not(:disabled):hover .icon {
+    transform: rotate(180deg);
+  }
+
+  /* Stats */
+  .stats {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  /* Loading skeleton for QR */
+  .qr-skeleton {
+    width: 180px;
+    height: 180px;
+    border-radius: 8px;
     background: linear-gradient(135deg, #e8e8e8 25%, #f5f5f5 50%, #e8e8e8 75%);
     background-size: 200% 200%;
     animation: skeleton 1.5s ease-in-out infinite;
   }
+
   @keyframes skeleton {
     0% { background-position: 0% 50%; }
     50% { background-position: 100% 50%; }
     100% { background-position: 0% 50%; }
   }
 
-  /* Overlay on bound/scan QR */
-  .slot-qr-box .qr-overlay {
-    display: none;
-    position: absolute;
-    inset: 0;
-    align-items: center;
-    justify-content: center;
-    background: rgba(255,255,255,0.92);
-    border-radius: 8px;
-    font-size: 36px;
-    z-index: 2;
-  }
-  .slot-card.state-bound .slot-qr-box .qr-overlay { display: flex; }
-  .slot-card.state-bound .slot-qr-box .qr-overlay .check-mark {
-    animation: successPop 0.5s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  .slot-card.state-scaned .slot-qr-box .qr-overlay { display: flex; }
-  .slot-card.state-scaned .slot-qr-box .qr-overlay .scan-mark {
-    font-size: 28px;
-    animation: scanPop 0.4s ease;
-  }
-  @keyframes successPop {
-    0% { transform: scale(0); opacity: 0; }
-    100% { transform: scale(1); opacity: 1; }
-  }
-  @keyframes scanPop {
-    0% { transform: scale(0.5); opacity: 0; }
-    50% { transform: scale(1.2); }
-    100% { transform: scale(1); opacity: 1; }
-  }
-
-  /* Status badge */
-  .slot-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 3px 10px;
-    border-radius: 20px;
-    font-size: 11px;
-    font-weight: 600;
-    transition: all 0.4s ease;
-  }
-  .slot-badge.waiting {
-    background: rgba(245, 158, 11, 0.12);
-    color: var(--accent);
-    border: 1px solid rgba(245, 158, 11, 0.2);
-  }
-  .slot-badge.scaned {
-    background: rgba(251, 191, 36, 0.15);
-    color: #f59e0b;
-    border: 1px solid rgba(251, 191, 36, 0.25);
-  }
-  .slot-badge.bound {
-    background: rgba(52, 211, 153, 0.12);
-    color: var(--success);
-    border: 1px solid rgba(52, 211, 153, 0.2);
-  }
-  .slot-badge.expired {
-    background: rgba(248, 113, 113, 0.1);
-    color: var(--error);
-    border: 1px solid rgba(248, 113, 113, 0.15);
-  }
-  .slot-badge.loading-qr {
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--text-muted);
-  }
-
-  /* Celebration particles inside card */
-  .slot-card.state-bound .confetti {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    overflow: hidden;
-  }
-  .slot-card.state-bound .confetti span {
-    position: absolute;
-    width: 6px; height: 6px;
-    border-radius: 2px;
-    animation: confettiFall 1.5s ease-out forwards;
-  }
-  .confetti span:nth-child(1) { left: 10%; background: #34d399; animation-delay: 0s; }
-  .confetti span:nth-child(2) { left: 30%; background: #f59e0b; animation-delay: 0.1s; }
-  .confetti span:nth-child(3) { left: 50%; background: #60a5fa; animation-delay: 0.2s; }
-  .confetti span:nth-child(4) { left: 70%; background: #f472b6; animation-delay: 0.15s; }
-  .confetti span:nth-child(5) { left: 85%; background: #34d399; animation-delay: 0.05s; }
-  @keyframes confettiFall {
-    0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
-    100% { transform: translateY(120px) rotate(720deg); opacity: 0; }
-  }
-
-  @keyframes qrPulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.12); }
-    50% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
-  }
-
-  /* ── Footer ── */
-  .footer {
-    text-align: center;
-    margin-top: 4px;
-    margin-bottom: 24px;
-  }
-  .footer-stats {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-bottom: 8px;
-  }
-  .refresh-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 18px;
-    background: rgba(255,255,255,0.06);
-    color: var(--text-secondary);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 10px;
-    font-size: 12px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    font-family: inherit;
-  }
-  .refresh-btn:hover:not(:disabled) {
-    background: rgba(255,255,255,0.10);
-    color: var(--text-primary);
-    border-color: rgba(255,255,255,0.15);
-  }
-  .refresh-btn:active:not(:disabled) { transform: scale(0.97); }
-  .refresh-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-  .refresh-btn .icon { font-size: 13px; transition: transform 0.4s ease; }
-  .refresh-btn:not(:disabled):hover .icon { transform: rotate(180deg); }
-
-  /* ── Responsive ── */
-  @media (max-width: 480px) {
-    body { padding: 10px; }
-    .header { margin-bottom: 14px; }
-    .logo { width: 38px; height: 38px; font-size: 17px; margin-bottom: 8px; }
-    h1 { font-size: 17px; }
-    .subtitle { font-size: 12px; }
-    .meter { padding: 12px 14px; flex-wrap: wrap; gap: 8px; }
-    .slot-grid {
-      grid-template-columns: repeat(2, 1fr);
-      gap: 8px;
-    }
-    .slot-qr-box { width: 100px; height: 100px; }
-    .slot-qr-box img { width: 85px; height: 85px; }
-    .slot-qr-box .qr-skeleton { width: 85px; height: 85px; }
-    .slot-card { padding: 10px 8px 8px; }
-    .slot-num { font-size: 11px; margin-bottom: 6px; }
-  }
-  @media (min-width: 640px) {
-    .slot-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  /* Responsive */
+  @media (max-width: 440px) {
+    body { padding: 12px; }
+    .card { padding: 24px 16px 24px; border-radius: 16px; }
+    .qr-wrapper { width: 180px; height: 180px; }
+    .qr-box img { width: 150px; height: 150px; }
+    .qr-skeleton { width: 150px; height: 150px; }
+    h1 { font-size: 20px; }
+    .steps { flex-direction: column; gap: 4px; }
+    .step { display: flex; align-items: center; gap: 8px; padding: 8px 12px; text-align: left; }
+    .step-num { margin-bottom: 0; flex-shrink: 0; }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .slot-card.state-waiting .slot-qr-box { animation: none; }
-    .slot-card.state-scaned .slot-qr-box { animation: none; }
-    .slot-card.state-bound .confetti span { animation: none; }
+    .qr-box.pulsing { animation: none; }
     .qr-skeleton { animation: none; }
-    .ticker-text.animate { animation: none; }
+    .refresh-btn .icon { transition: none; }
+    .refresh-btn:not(:disabled):hover .icon { transform: none; }
   }
 </style>
 </head>
@@ -428,262 +389,224 @@
 <div class="grain"></div>
 
 <div class="container">
-  <!-- Header -->
-  <div class="header">
+  <div class="card" id="card">
+    <!-- Logo -->
     <div class="logo">🦞</div>
-    <h1>抢虾苗大战</h1>
-    <p class="subtitle">在微信里领养属于自己的 do 大龙虾 🦞</p>
-  </div>
 
-  <!-- Seckill Meter -->
-  <div class="meter" id="meter">
-    <div class="meter-left">
-      <span class="meter-icon">🦐</span>
-      <span class="meter-text">已抢 <strong id="boundCount">0</strong> / 共 <strong id="totalCount">0</strong> 个虾苗席位</span>
+    <!-- Title -->
+    <h1>Just Claw Do It</h1>
+    <p class="subtitle">在微信里养一只属于自己的虾</p>
+
+    <!-- Prompt -->
+    <p class="prompt-text">📢 请及时领取您的虾苗</p>
+
+    <!-- QR Code -->
+    <div class="qr-wrapper">
+      <div class="qr-box pulsing" id="qrBox">
+        <div class="qr-placeholder" id="qrContent">
+          <div class="qr-skeleton"></div>
+        </div>
+        <div class="success-icon">✓</div>
+      </div>
     </div>
-    <span class="meter-badge" id="meterBadge">⚡ 抢购中</span>
-  </div>
 
-  <!-- News Ticker -->
-  <div class="ticker-wrap" id="tickerWrap">
-    <span class="ticker-icon">🔥</span>
-    <span class="ticker-text" id="tickerText">等待新消息...</span>
-  </div>
+    <!-- Status -->
+    <div class="status" id="status">
+      <span class="dot pulse" id="statusDot"></span>
+      <span id="statusText">准备中...</span>
+    </div>
+    <div class="countdown" id="countdown"></div>
 
-  <!-- Slot Grid -->
-  <div class="slot-grid" id="slotGrid">
-    <!-- Rendered by JS -->
-  </div>
+    <!-- Steps -->
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-label">打开微信「扫一扫」</div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-label">扫描上方二维码</div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-label">确认登录，自动绑定</div>
+      </div>
+    </div>
 
-  <!-- Footer -->
-  <div class="footer">
-    <div class="footer-stats" id="footerStats"></div>
-    <button class="refresh-btn" id="refreshBtn" onclick="manualRefresh()">
-      <span class="icon">↻</span> 刷新全部
+    <!-- Refresh -->
+    <button class="refresh-btn" id="refreshBtn" onclick="refreshQR()">
+      <span class="icon">↻</span>
+      刷新二维码
     </button>
+
+    <!-- Stats -->
+    <div class="stats" id="stats"></div>
   </div>
 </div>
 
 <script>
 const API_BASE = '';
-let prevSlots = {};      // slot_id → prev state
-let newsQueue = [];      // recent binding announcements
-let loading = true;
+let currentSlot = null;
+let qrTimer = null;
+let statusTimer = null;
+let imageRefreshTimer = null;
+let countdownValue = 50;
+let lastQrUrl = '';
 
-// ── Status helpers ──
+function showError(msg) {
+  const qrBox = document.getElementById('qrBox');
+  qrBox.className = 'qr-box error';
+  qrBox.classList.remove('pulsing');
+  document.getElementById('qrContent').innerHTML = '<div class="qr-placeholder">' + msg + '</div>';
+  setStatus(msg, 'error');
+}
 
-function slotLabel(status) {
-  switch (status) {
-    case 'idle': return { badge: '准备中', cls: 'loading-qr', icon: '⏳' };
-    case 'waiting': return { badge: '待抢', cls: 'waiting', icon: '🔥' };
-    case 'scaned': return { badge: '已被扫', cls: 'scaned', icon: '🔍' };
-    case 'confirmed': return { badge: '已抢成功', cls: 'bound', icon: '✅' };
-    case 'expired': return { badge: '已过期', cls: 'expired', icon: '❌' };
-    default: return { badge: status || '未知', cls: '', icon: '❓' };
+function showLoading() {
+  const qrBox = document.getElementById('qrBox');
+  qrBox.className = 'qr-box';
+  qrBox.classList.add('pulsing');
+  document.getElementById('qrContent').innerHTML = '<div class="qr-skeleton"></div>';
+  setStatus('获取中...', '');
+}
+
+function showQR(url, slotId) {
+  currentSlot = slotId;
+  lastQrUrl = url;
+  const qrBox = document.getElementById('qrBox');
+  qrBox.className = 'qr-box';
+  qrBox.classList.add('pulsing');
+  document.getElementById('qrContent').innerHTML =
+    '<img src="/api/v1/pool/qr-image/' + slotId + '?t=' + Date.now() +
+    '" alt="微信二维码" id="qrImg" onerror="this.onerror=null;showError(\'二维码加载失败\')">';
+  setStatus('等待扫码...', 'waiting');
+  document.getElementById('refreshBtn').disabled = false;
+}
+
+function refreshSlotImage() {
+  // 同 slot 刷新图片（不换 slot_id），带缓存破坏
+  if (!currentSlot) return;
+  const img = document.getElementById('qrImg');
+  if (img) {
+    img.src = '/api/v1/pool/qr-image/' + currentSlot + '?t=' + Date.now();
   }
 }
 
-function slotStateClass(status, bound) {
-  if (bound) return 'state-bound';
-  switch (status) {
-    case 'waiting': return 'state-waiting';
-    case 'scaned': return 'state-scaned';
-    case 'expired': return 'state-expired';
-    default: return '';
-  }
+function showScanned() {
+  setStatus('已扫码！请在手机上确认...', 'scanned');
 }
 
-function extractSlotNumber(slotId) {
-  const m = slotId.match(/(\d+)$/);
-  return m ? m[1] : slotId;
+function showSuccess() {
+  const qrBox = document.getElementById('qrBox');
+  qrBox.className = 'qr-box success';
+  qrBox.classList.remove('pulsing');
+  document.getElementById('qrContent').innerHTML = '';
+  setStatus('绑定成功！你已领养了一只 do 大龙虾 ✨', 'success');
+  document.getElementById('refreshBtn').disabled = true;
+  if (qrTimer) clearInterval(qrTimer);
+  if (statusTimer) clearInterval(statusTimer);
+  if (imageRefreshTimer) clearInterval(imageRefreshTimer);
 }
 
-// ── Render slot card ──
-
-function renderSlot(slot, ci) {
-  const { slot_id, slot_status, bound } = slot;
-  const label = slotLabel(slot_status);
-  const stateClass = slotStateClass(slot_status, bound);
-  const num = extractSlotNumber(slot_id);
-  const overlayHtml = bound
-    ? '<div class="qr-overlay"><span class="check-mark">✅</span></div>'
-    : (slot_status === 'scaned'
-      ? '<div class="qr-overlay"><span class="scan-mark">🔍</span></div>'
-      : '');
-  const qrImg = (!bound && slot_status !== 'expired' && slot_status !== 'idle')
-    ? `<img src="/api/v1/pool/qr-image/${slot_id}?t=${Date.now()}" alt="QR" onerror="this.outerHTML='<div class=\\'qr-placeholder\\'>加载失败</div>'">`
-    : '<div class="qr-placeholder">--</div>';
-
-  const confettiHtml = bound
-    ? '<div class="confetti"><span></span><span></span><span></span><span></span><span></span></div>'
-    : '';
-
-  return `<div class="slot-card ${stateClass}" data-slot="${slot_id}" id="slot-${ci}">
-    ${confettiHtml}
-    <div class="slot-num">#${num} 号虾苗</div>
-    <div class="slot-qr-box">
-      ${qrImg}
-      ${overlayHtml}
-    </div>
-    <div class="slot-badge ${label.cls}">${label.icon} ${label.badge}</div>
-  </div>`;
+function setStatus(text, type) {
+  const el = document.getElementById('status');
+  const dot = document.getElementById('statusDot');
+  const textEl = document.getElementById('statusText');
+  el.className = 'status' + (type ? ' ' + type : '');
+  dot.className = 'dot' + (type ? ' pulse' : '');
+  textEl.textContent = text;
 }
 
-// ── Detect state changes → push news ──
-
-function detectChanges(slots) {
-  const now = Date.now();
-  for (const s of slots) {
-    const prev = prevSlots[s.slot_id];
-    if (!prev) continue;
-    // waiting → scaned
-    if (prev.slot_status === 'waiting' && s.slot_status === 'scaned') {
-      pushNews(`🔍 #${extractSlotNumber(s.slot_id)} 号虾苗被锁定了！快来抢旁边的`);
-    }
-    // scaned/confirmed → bound (someone actually got it)
-    if (!prev.bound && s.bound) {
-      pushNews(`🎉 #${extractSlotNumber(s.slot_id)} 号虾苗已被领养！`);
-    }
-    // waiting → confirmed (fast transition, no scaned phase)
-    if (prev.slot_status === 'waiting' && s.slot_status === 'confirmed') {
-      pushNews(`🎉 #${extractSlotNumber(s.slot_id)} 号虾苗已被领养！`);
-    }
-    // new slot appeared
-    if (prev.slot_status === 'idle' && s.slot_status === 'waiting') {
-      pushNews(`🆕 #${extractSlotNumber(s.slot_id)} 号虾苗已上架！`);
-    }
-    // expired
-    if (prev.slot_status === 'waiting' && s.slot_status === 'expired') {
-      pushNews(`⏳ #${extractSlotNumber(s.slot_id)} 号虾苗已过期，等待重新上架`);
-    }
-  }
-}
-
-function pushNews(msg) {
-  newsQueue.push(msg);
-  if (newsQueue.length > 20) newsQueue.shift();
-  const el = document.getElementById('tickerText');
-  if (el) {
-    el.textContent = msg;
-    el.classList.remove('animate');
-    void el.offsetWidth;  // force reflow
-    el.classList.add('animate');
-  }
-}
-
-// ── Poll hot slots ──
-
-async function pollSlots() {
+async function fetchQR() {
   try {
-    const resp = await fetch(API_BASE + '/api/v1/pool/hot-slots');
+    const resp = await fetch(API_BASE + '/api/v1/pool/available');
+    if (!resp.ok) {
+      showError('暂无可用二维码，请稍后再试');
+      return;
+    }
+    const data = await resp.json();
+    showQR(data.qr_url, data.slot_id);
+    countdownValue = 50;
+    startPollingStatus(data.slot_id);
+  } catch (e) {
+    showError('网络错误，请检查连接');
+  }
+}
+
+async function pollStatus(slotId) {
+  try {
+    const resp = await fetch(API_BASE + '/api/v1/pool/status/' + slotId);
     if (!resp.ok) return;
     const data = await resp.json();
-    const slots = data.slots || [];
-
-    if (!loading) {
-      detectChanges(slots);
+    if (data.bound) { showSuccess(); return; }
+    if (data.qr_status === 'scaned') { showScanned(); return; }
+    // 检测二维码过期→自动重载同 slot 图片
+    if (data.qr_status === 'expired') {
+      setStatus('二维码已过期，正在刷新...', 'error');
+      setTimeout(refreshSlotImage, 500);
+      return;
     }
-
-    // Save prev state
-    const nextPrev = {};
-    for (const s of slots) {
-      nextPrev[s.slot_id] = { slot_status: s.slot_status, bound: s.bound };
+    // 检测后端是否刷新了二维码（同 slot，新 qr_url）
+    if (data.qr_url && data.qr_url !== lastQrUrl) {
+      lastQrUrl = data.qr_url;
+      refreshSlotImage();
     }
-    prevSlots = nextPrev;
-
-    // Render grid
-    const grid = document.getElementById('slotGrid');
-    if (loading) {
-      grid.innerHTML = slots.map((s, i) => renderSlot(s, i)).join('');
-      loading = false;
-    } else {
-      // Update in place — only change classes/content that changed
-      for (let i = 0; i < slots.length; i++) {
-        const s = slots[i];
-        const el = document.getElementById('slot-' + i);
-        if (!el) {
-          // Slot count changed, full re-render
-          grid.innerHTML = slots.map((s2, i2) => renderSlot(s2, i2)).join('');
-          break;
-        }
-        // Update state class
-        const stateClass = slotStateClass(s.slot_status, s.bound);
-        ['state-waiting','state-scaned','state-bound','state-expired'].forEach(c => {
-          el.classList.toggle(c, stateClass === c);
-        });
-        // Update badge
-        const badge = el.querySelector('.slot-badge');
-        const label = slotLabel(s.slot_status);
-        if (badge) {
-          badge.className = 'slot-badge ' + label.cls;
-          badge.textContent = label.icon + ' ' + label.badge;
-        }
-        // Update overlay
-        const qrBox = el.querySelector('.slot-qr-box');
-        if (qrBox) {
-          let overlay = qrBox.querySelector('.qr-overlay');
-          if (s.bound) {
-            if (!overlay) {
-              qrBox.insertAdjacentHTML('beforeend',
-                '<div class="qr-overlay"><span class="check-mark">✅</span></div>');
-            } else {
-              overlay.innerHTML = '<span class="check-mark">✅</span>';
-              overlay.style.display = 'flex';
-            }
-            // Add confetti if not already
-            if (!el.querySelector('.confetti')) {
-              el.insertAdjacentHTML('afterbegin',
-                '<div class="confetti"><span></span><span></span><span></span><span></span><span></span></div>');
-            }
-          } else if (s.slot_status === 'scaned') {
-            if (!overlay) {
-              qrBox.insertAdjacentHTML('beforeend',
-                '<div class="qr-overlay"><span class="scan-mark">🔍</span></div>');
-            } else {
-              overlay.innerHTML = '<span class="scan-mark">🔍</span>';
-              overlay.style.display = 'flex';
-            }
-          } else if (overlay) {
-            overlay.style.display = 'none';
-          }
-        }
-      }
-    }
-
-    // Update meter
-    const bound = slots.filter(s => s.bound).length;
-    document.getElementById('boundCount').textContent = bound;
-    document.getElementById('totalCount').textContent = slots.length;
-    document.getElementById('meterBadge').textContent =
-      bound >= slots.length ? '🎉 已被抢光' : '⚡ 抢购中';
-
-    // Footer stats
-    document.getElementById('footerStats').textContent =
-      `热池 ${slots.length} 个坑位 · 已抢 ${bound}`;
-
-  } catch (e) {
-    // silent
-  }
+  } catch (e) {}
 }
 
-// ── Manual refresh ──
-
-function manualRefresh() {
-  loading = true;
-  const grid = document.getElementById('slotGrid');
-  grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);font-size:13px;padding:40px 0">刷新中...</div>';
-  setTimeout(pollSlots, 300);
+function startPollingStatus(slotId) {
+  if (statusTimer) clearInterval(statusTimer);
+  statusTimer = setInterval(() => pollStatus(slotId), 2000);
 }
 
-// ── Init ──
-
-function init() {
-  loading = true;
-  pollSlots();
-  setInterval(pollSlots, 2000);
+function startCountdown() {
+  if (qrTimer) clearInterval(qrTimer);
+  qrTimer = setInterval(() => {
+    countdownValue--;
+    document.getElementById('countdown').textContent =
+      countdownValue + 's 后自动刷新';
+    if (countdownValue <= 0) refreshQR();
+  }, 1000);
 }
 
-init();
+// 每 25 秒刷新同 slot 二维码图片（防缓存过期）
+function startImageRefresh() {
+  if (imageRefreshTimer) clearInterval(imageRefreshTimer);
+  imageRefreshTimer = setInterval(() => {
+    if (currentSlot && document.getElementById('qrImg')) {
+      refreshSlotImage();
+    }
+  }, 25000);
+}
+
+async function refreshQR() {
+  if (document.getElementById('refreshBtn').disabled) return;
+  showLoading();
+  if (statusTimer) clearInterval(statusTimer);
+  if (qrTimer) clearInterval(qrTimer);
+  if (imageRefreshTimer) clearInterval(imageRefreshTimer);
+  document.getElementById('countdown').textContent = '刷新中...';
+  await fetchQR();
+  startCountdown();
+  startImageRefresh();
+}
+
+async function fetchStats() {
+  try {
+    const resp = await fetch(API_BASE + '/api/v1/pool/stats');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    document.getElementById('stats').textContent =
+      '已绑定 ' + data.bound + ' / 总 ' + data.total_profiles + ' 个席位';
+  } catch (e) {}
+}
+
+// Init
+showLoading();
+fetchQR();
+startCountdown();
+startImageRefresh();
+fetchStats();
+setInterval(fetchStats, 10000);
 </script>
 </body>
 </html>
