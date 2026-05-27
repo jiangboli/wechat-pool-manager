@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>just claw do 一下</title>
+<title>Just Claw Do 一下</title>
 <style>
   *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -245,6 +245,7 @@
     color: var(--text-muted);
     margin-bottom: 20px;
     font-variant-numeric: tabular-nums;
+    min-height: 18px;
   }
 
   /* Steps */
@@ -378,8 +379,8 @@
     <div class="logo">🦞</div>
 
     <!-- Title -->
-    <h1>just claw do 一下</h1>
-    <p class="subtitle">欢迎领养你的 do 大龙虾</p>
+    <h1>Just Claw Do 一下</h1>
+    <p class="subtitle">欢迎领养你的 帝欧 大龙虾</p>
 
     <!-- QR Code -->
     <div class="qr-wrapper">
@@ -530,7 +531,7 @@ async function refreshQR() {
   showLoading();
   if (statusTimer) clearInterval(statusTimer);
   if (qrTimer) clearInterval(qrTimer);
-  document.getElementById('countdown').textContent = '';
+  document.getElementById('countdown').textContent = '刷新中...';
   await fetchQR();
   startCountdown();
 }
