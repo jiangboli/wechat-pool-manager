@@ -79,13 +79,13 @@ def set_weixin_credentials(profile: str, account_id: str, token: str, base_url: 
             lines = f.readlines()
     except Exception:
         lines = []
-    keep = {"WEIXIN_ACCOUNT_ID=", "WEIXIN_TOKEN=", "WEIXIN_BASE_URL=", "WEIXIN_DM_POLICY="}
+    keep = {"WEIXIN_ACCOUNT_ID=", "WEIXIN_TOKEN=", "WEIXIN_BASE_URL=", "WEIXIN_ALLOW_ALL_USERS="}
     lines = [l for l in lines if not any(l.startswith(k) for k in keep)]
     lines.append("")
     lines.append("# WeChat credentials (auto-set by pool manager)")
     lines.append("WEIXIN_ACCOUNT_ID=" + account_id)
     lines.append("WEIXIN_TOKEN=" + token)
-    lines.append("WEIXIN_DM_POLICY=open")
+    lines.append("WEIXIN_ALLOW_ALL_USERS=true")
     if base_url:
         lines.append("WEIXIN_BASE_URL=" + base_url)
     with open(env_path, "w") as f:
