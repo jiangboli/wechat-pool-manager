@@ -47,7 +47,7 @@ gateway:
 
 frontend:
   # Pool Manager API 监听端口
-  api_port: 8765
+  api_port: 8766
 
   # 前端页面自动刷新二维码间隔（秒）
   # iLink 二维码有效期约 60s，建议 45s
