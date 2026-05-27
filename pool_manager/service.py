@@ -101,6 +101,8 @@ async def get_slot_status(slot_id: str):
             return {
                 "slot_id": slot_id,
                 "qr_status": s["status"],
+                "qr_url": s["qr_url"],
+                "qr_refreshed_at": s.get("refreshed_at", ""),
                 "bound": ps.get("status") == "bound_healthy",
                 "bound_at": ps.get("bound_at", ""),
                 "user_id": ps.get("user_id", ""),
@@ -145,7 +147,8 @@ async def get_qr_image(slot_id: str):
         img = qr.make_image(fill_color="black", back_color="white")
         buf = io.BytesIO()
         img.save(buf, format="PNG")
-        return Response(content=buf.getvalue(), media_type="image/png")
+        return Response(content=buf.getvalue(), media_type="image/png",
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     except Exception as e:
         raise HTTPException(500, f"生成二维码失败: {e}")
 

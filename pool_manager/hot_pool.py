@@ -11,6 +11,7 @@ import asyncio
 import logging
 import os
 import sys
+import time
 from typing import Callable, Dict, Optional
 
 logger = logging.getLogger("pool_manager.hot_pool")
@@ -36,6 +37,7 @@ class HotPoolSlot:
         self.status: str = "idle"
         self.refresh_count: int = 0
         self.max_refresh: int = config.get("pool", {}).get("max_qr_refresh", 3)
+        self.refreshed_at: str = ""
 
         # 绑定结果
         self.account_id: Optional[str] = None
@@ -91,6 +93,7 @@ class HotPoolSlot:
                 self._consecutive_failures = 0
                 self.qr_value = str(qr_resp.get("qrcode") or "")
                 self.qr_url = str(qr_resp.get("qrcode_img_content") or "")
+                self.refreshed_at = time.strftime("%H:%M:%S")
                 if not self.qr_value:
                     logger.warning("[%s] 二维码响应缺少 qrcode 字段", self.profile)
                     await asyncio.sleep(1)
@@ -274,5 +277,6 @@ class HotPool:
                 "profile": name,
                 "status": slot.status,
                 "qr_url": slot.qr_url,
+                "refreshed_at": slot.refreshed_at,
             })
         return result
