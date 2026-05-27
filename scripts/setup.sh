@@ -74,17 +74,41 @@ fi
 # ── 安装 Python 依赖 ─────────────────────────────────────────────────────
 echo "[2/6] ? 安装 Python 依赖..."
 HERMES_VENV="$HOME/.hermes/hermes-agent/venv"
-if [ -f "$HERMES_VENV/bin/pip" ]; then
-  PIP="$HERMES_VENV/bin/pip"
-else
-  PIP="pip3"
-fi
+
+# 尝试多种方式安装依赖
+install_deps() {
+  # 方式 1: Hermes venv 的 pip
+  if [ -f "$HERMES_VENV/bin/pip" ]; then
+    echo "  使用 Hermes venv pip..."
+    "$HERMES_VENV/bin/pip" install -r "$PROJECT_DIR/requirements.txt" -q
+    return 0
+  fi
+  # 方式 2: uv 安装（Hermes 新版本默认用 uv）
+  if command -v uv &>/dev/null; then
+    echo "  使用 uv..."
+    uv pip install -r "$PROJECT_DIR/requirements.txt" -q
+    return 0
+  fi
+  if [ -f "$HERMES_VENV/bin/uv" ]; then
+    echo "  使用 Hermes venv uv..."
+    "$HERMES_VENV/bin/uv" pip install -r "$PROJECT_DIR/requirements.txt" -q
+    return 0
+  fi
+  # 方式 3: 系统 pip3
+  if command -v pip3 &>/dev/null; then
+    echo "  使用 pip3..."
+    pip3 install -r "$PROJECT_DIR/requirements.txt" -q
+    return 0
+  fi
+  echo "  ? 未找到 pip/uv，请手动安装依赖: pip install -r $PROJECT_DIR/requirements.txt"
+  return 1
+}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 if [ -f "$PROJECT_DIR/requirements.txt" ]; then
-  "$PIP" install -r "$PROJECT_DIR/requirements.txt" -q
+  install_deps
 fi
 
 # ── 创建目录结构 + 配置 ──────────────────────────────────────────────────
