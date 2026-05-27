@@ -261,7 +261,14 @@ async def startup():
         existing = created
 
     state.init_profiles(existing)
-    logger.info("池状态已初始化，共 %d 个 profile", len(existing))
+    # 重置上次运行留下的过期状态（in_hot_pool / qr_failed → available）
+    for name in list(state.profiles.keys()):
+        ps = state.profiles[name]
+        if ps.get("status") in ("in_hot_pool", "qr_failed"):
+            state.mark_available(name)
+    logger.info("池状态已初始化，共 %d 个 profile（重置 %d 个过期热池状态）",
+                len(existing),
+                sum(1 for p in state.profiles.values() if p.get("status") == "available"))
 
     # 启动热池
     hot_pool = HotPool(config, state, pm, gm)

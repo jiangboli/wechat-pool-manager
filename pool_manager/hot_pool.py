@@ -49,13 +49,15 @@ class HotPoolSlot:
     async def _api_get(self, url: str, timeout_ms: int = 15000) -> Optional[dict]:
         """调用 iLink API。"""
         import aiohttp
+        import json as _json
         try:
             timeout = aiohttp.ClientTimeout(total=timeout_ms / 1000)
             async with self._aiohttp.get(url, timeout=timeout, ssl=False) as resp:
                 if resp.status == 200:
-                    return await resp.json()
+                    body = await resp.read()
+                    return _json.loads(body)
         except Exception as exc:
-            logger.debug("[%s] API 调用失败: %s", self.profile, exc)
+            logger.warning("[%s] API 调用失败: %s", self.profile, exc)
         return None
 
     async def run(self, on_confirmed: Callable) -> bool:
@@ -63,6 +65,7 @@ class HotPoolSlot:
         import aiohttp
 
         self._running = True
+        self._consecutive_failures = 0
         conn = aiohttp.TCPConnector(ssl=False)
         async with aiohttp.ClientSession(connector=conn, trust_env=True) as session:
             self._aiohttp = session
@@ -75,10 +78,17 @@ class HotPoolSlot:
                     QR_TIMEOUT_MS,
                 )
                 if not qr_resp:
-                    logger.warning("[%s] 获取二维码失败，1秒后重试", self.profile)
+                    self._consecutive_failures += 1
+                    if self._consecutive_failures > 10:
+                        logger.warning("[%s] 连续 %d 次获取二维码失败，放弃当前槽位",
+                                       self.profile, self._consecutive_failures)
+                        return False
+                    logger.warning("[%s] 获取二维码失败（第%d次），1秒后重试",
+                                   self.profile, self._consecutive_failures)
                     await asyncio.sleep(1)
                     continue
 
+                self._consecutive_failures = 0
                 self.qr_value = str(qr_resp.get("qrcode") or "")
                 self.qr_url = str(qr_resp.get("qrcode_img_content") or "")
                 if not self.qr_value:
@@ -190,18 +200,8 @@ class HotPool:
         self.slots.clear()
 
     async def _tick(self):
-        """每 tick 补充槽位并清理已完成的任务。"""
-        # 清理已完成的槽位
-        done_names = []
-        for name, task in self._tasks.items():
-            if task.done():
-                done_names.append(name)
-                slot = self.slots.pop(name, None)
-                self._tasks.pop(name, None)
-                if slot:
-                    slot.stop()
-
-        # 补充槽位
+        """每 tick 补充槽位。"""
+        # 注意：_run_slot 的 finally 块已负责清理，这里只负责计数和补充
         active = len(self.slots)
         needed = self.pool_size - active
         if needed > 0:
