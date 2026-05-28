@@ -4,7 +4,7 @@ FROM python:3.11-slim
 RUN pip install --no-cache-dir hermes-agent
 
 # 创建运行用户
-RUN useradd -m hermes
+RUN useradd -m --uid 1000 hermes
 USER hermes
 WORKDIR /home/hermes
 
