@@ -1,7 +1,7 @@
 FROM python:3.11-slim
 
-# 安装 Hermes Agent
-RUN pip install --no-cache-dir hermes-agent
+# 安装 Hermes Agent + 微信平台依赖
+RUN pip install --no-cache-dir hermes-agent aiohttp cryptography
 
 # 创建运行用户
 RUN useradd -m --uid 1000 hermes
