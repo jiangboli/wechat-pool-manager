@@ -101,8 +101,8 @@ docker:
   data_root_host: "/home/dosh/data/"
   max_containers: $MAX_BOUND
   container_defaults:
-    memory_limit: "256m"
-    memory_reservation: "128m"
+    memory_limit: "2g"
+    memory_reservation: "1g"
     cpu_shares: 256
     cpu_quota: 50000
 
