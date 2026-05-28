@@ -78,9 +78,10 @@ echo "[2/5] 📁 准备配置文件..."
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # 创建数据目录基础结构
-if [ ! -d "/home/data" ]; then
-  echo "  创建 /home/data 目录..."
-  sudo mkdir -p /home/data
+DATA_ROOT="$HOME/data"
+if [ ! -d "$DATA_ROOT" ]; then
+  echo "  创建 $DATA_ROOT 目录..."
+  mkdir -p "$DATA_ROOT"
 fi
 
 # 生成 config.yaml（Docker 版）
@@ -156,7 +157,7 @@ docker run -d \
   --network hermes-pool-net \
   -p "$HOST:$PORT:8765" \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
-  -v /home/data:/home/data \
+  -v "$HOME/data:/home/data" \
   -v "$PROJECT_DIR/config.yaml:/app/config.yaml:ro" \
   --restart unless-stopped \
   pool-manager:latest

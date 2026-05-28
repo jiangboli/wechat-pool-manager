@@ -13,7 +13,7 @@ services:
       # Docker 套接字 — 让 pool manager 创建/管理其他容器
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # 数据目录 — 持久化微信凭证和 Hermes 配置
-      - /home/data:/home/data
+      - /home/dosh/data:/home/data
       # 配置挂载（方便外部修改 config.yaml）
       - ./config.yaml:/app/config.yaml:ro
     networks:
