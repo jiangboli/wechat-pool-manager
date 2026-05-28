@@ -37,7 +37,7 @@ docker:
   max_containers: 80                   # 最大同时运行容器数
   container_defaults:
     memory_limit: "2g"               # 每个容器最多 2GB
-    memory_reservation: "1g"         # 预留 1GB
+    memory_reservation: "128m"         # 预留 128MB
     cpu_shares: 256                    # CPU 权重 (默认 1024)
     cpu_quota: 50000                   # 最多使用 0.5 核 (100000=1核)
 

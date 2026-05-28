@@ -71,6 +71,24 @@ def _load_from_auth_json():
         logger.error("读取 auth.json 失败: %s", e)
 
 
+def _save_credential_pool():
+    """将当前凭证池写入 auth.json。"""
+    try:
+        auth_path = os.path.expanduser("~/.hermes/auth.json")
+        os.makedirs(os.path.dirname(auth_path), exist_ok=True)
+        pool = {}
+        for provider, keys in _credential_pool.items():
+            pool[provider] = [
+                {"access_token": k["access_token"], "label": k.get("label", "")}
+                for k in keys
+            ]
+        with open(auth_path, "w") as f:
+            json.dump({"credential_pool": pool}, f, indent=2, ensure_ascii=False)
+        logger.info("[proxy] 凭证池已持久化到 %s (%d providers)", auth_path, len(pool))
+    except Exception as e:
+        logger.error("[proxy] 持久化凭证池失败: %s", e)
+
+
 def _add_key_internal(provider: str, key_info: dict) -> str:
     """内部添加 key，返回 key_id。"""
     if provider not in _credential_pool:
@@ -84,6 +102,7 @@ def _add_key_internal(provider: str, key_info: dict) -> str:
     key_info["_error_count"] = 0
     _credential_pool[provider].append(key_info)
     logger.info("[proxy] 添加 key: provider=%s label=%s id=%s", provider, key_info.get("label", ""), key_id)
+    _save_credential_pool()  # 自动持久化
     return key_id
 
 

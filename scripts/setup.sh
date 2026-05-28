@@ -102,7 +102,7 @@ docker:
   max_containers: $MAX_BOUND
   container_defaults:
     memory_limit: "2g"
-    memory_reservation: "1g"
+    memory_reservation: "128m"
     cpu_shares: 256
     cpu_quota: 50000
 
