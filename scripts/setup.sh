@@ -98,6 +98,7 @@ docker:
   image: "hermes-bot:latest"
   network: "hermes-pool-net"
   data_root: "/home/data/"
+  data_root_host: "/home/dosh/data/"
   max_containers: $MAX_BOUND
   container_defaults:
     memory_limit: "256m"

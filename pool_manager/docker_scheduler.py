@@ -87,6 +87,7 @@ class DockerScheduler:
         self.image = docker_cfg.get("image", DEFAULT_IMAGE)
         self.network = docker_cfg.get("network", DEFAULT_NETWORK)
         self.data_root = docker_cfg.get("data_root", DEFAULT_DATA_ROOT)
+        self.data_root_host = docker_cfg.get("data_root_host", self.data_root)
         self.max_containers = docker_cfg.get("max_containers", DEFAULT_MAX_CONTAINERS)
         self.memory_limit = defaults.get("memory_limit", DEFAULT_MEMORY_LIMIT)
         self.memory_reservation = defaults.get("memory_reservation", DEFAULT_MEMORY_RESERVATION)
@@ -198,6 +199,9 @@ agent:
             self.write_env(profile, credentials)
         self.write_config(profile)
 
+        # 计算宿主机路径（给 Docker API 挂载用）
+        hdir_host = _hermes_dir(profile, self.data_root_host)
+
         # 启动容器
         try:
             container = self.client.containers.run(
@@ -211,7 +215,7 @@ agent:
                 cpu_shares=self.cpu_shares,
                 cpu_quota=self.cpu_quota,
                 volumes={
-                    hdir: {
+                                    hdir_host: {
                         "bind": "/home/hermes/.hermes",
                         "mode": "rw",
                     }
