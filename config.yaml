@@ -1,13 +1,14 @@
 # WeChat Gateway Pool Manager
 #
-# 为多个微信用户提供独立的 Hermes Gateway 实例。
-# 整个系统设计为可移植——任意 Linux 机器安装 Hermes 后一键部署。
+# 为多个微信用户提供独立的 Hermes Gateway 实例（Docker 版）。
+# 整个系统设计为可移植——任意 Linux 机器安装 Docker 后一键部署。
 #
 # 部署方式（推荐 CLI 参数覆盖）:
 #   bash scripts/setup.sh --total 50 --hot-pool 3 --max-bound 30
 #
 # 配置文件中的值作为默认值，CLI 参数优先覆盖。
 
+# ── 池配置 ──
 pool:
   # 预创建 profile 总数。每个 profile ≈ 50KB 磁盘，无资源消耗
   total_profiles: 100
@@ -17,8 +18,8 @@ pool:
   # 建议: 低配机器 2-3, 中配 4-5, 高配 5-8
   hot_pool_size: 5
 
-  # 最大同时运行的 bound gateway 数。
-  # 每个 gateway ≈ 60MB RAM（Python async 长轮询）。
+  # 最大同时运行容器数。
+  # 每个容器 ≈ 60MB RAM（Python async 长轮询）。
   # 按机器内存估算: 4GB→15, 8GB→40, 16GB→80
   max_bound_gateways: 80
 
@@ -28,22 +29,25 @@ pool:
   # QR 过期后最多自动刷新次数（iLink 限制）
   max_qr_refresh: 3
 
-gateway:
-  # 空闲超时：gateway 无消息超过此时间自动停止（节约资源）
-  # 用户再发消息时会自动恢复（通过消息触发 systemd restart）
-  idle_timeout_minutes: 1440  # 24h
+# ── Docker 配置 ──
+docker:
+  image: "hermes-bot:latest"          # 容器镜像
+  network: "hermes-pool-net"           # Docker 网络
+  data_root: "/home/data/"             # 数据卷根目录
+  max_containers: 80                   # 最大同时运行容器数
+  container_defaults:
+    memory_limit: "256m"               # 每个容器最多 256MB
+    memory_reservation: "128m"         # 预留 128MB
+    cpu_shares: 256                    # CPU 权重 (默认 1024)
+    cpu_quota: 50000                   # 最多使用 0.5 核 (100000=1核)
 
-  # 崩溃后自动重启
-  restart_on_crash: true
-
-  # 最多连续重启次数——超过后标记 unhealthy 并告警
-  max_restart_attempts: 3
-
-  # 重启间隔（秒）
-  restart_delay_seconds: 10
-
-  # 健康检查间隔（秒）
-  health_check_interval: 60
+# ── LLM Proxy 配置 ──
+proxy:
+  default_provider: "deepseek"         # 默认 LLM provider
+  fallback_providers: ["alibaba"]      # fallback provider 链
+  circuit_breaker:
+    max_errors: 5                      # 连续 5 次错误触发熔断
+    recovery_window: 60                # 60 秒后尝试恢复
 
 frontend:
   # Pool Manager API 监听端口
