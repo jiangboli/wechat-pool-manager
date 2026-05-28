@@ -150,6 +150,7 @@ platforms:
 # LLM 配置——所有请求经过 Pool Manager Proxy
 model:
   provider: custom:pool-proxy
+  model: deepseek-v4-flash
 
 custom_providers:
   - name: pool-proxy
