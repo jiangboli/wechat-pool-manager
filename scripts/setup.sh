@@ -67,14 +67,48 @@ echo ""
 
 # ── 检查 Hermes ──────────────────────────────────────────────────────────
 if ! command -v hermes &>/dev/null; then
-  echo "[1/6] 📦 Hermes 未找到，开始安装..."
+  echo "[1/8] 📦 Hermes 未找到，开始安装..."
   curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
 else
-  echo "[1/6] 📦 Hermes 已安装"
+  echo "[1/8] 📦 Hermes 已安装"
+fi
+
+# ── 共享 Venv 安装（非 editable，wx 用户可直接 import）───────────────────
+echo "[2/8] 🔧 安装共享 Hermes venv..."
+SHARED_VENV="/opt/hermes/venv"
+SHARED_SRC="/opt/hermes/hermes-agent"
+
+if [ ! -d "$SHARED_VENV" ] || [ ! -d "$SHARED_SRC" ]; then
+  sudo mkdir -p /opt/hermes
+  sudo chown -R "$USER:$USER" /opt/hermes
+
+  # 复制 hermes 源码到共享位置
+  echo "  复制 hermes-agent 源码..."
+  cp -a "$HOME/.hermes/hermes-agent" "$SHARED_SRC"
+
+  # 安装到共享 venv（非 editable）
+  echo "  安装到共享 venv..."
+  cd "$SHARED_SRC"
+  uv pip install --python "$HOME/.hermes/hermes-agent/venv/bin/python" \
+    --python "$SHARED_VENV" . 2>&1 || {
+    # fallback: 直接创建 venv
+    echo "  尝试直接创建 venv..."
+    "$HOME/.hermes/hermes-agent/venv/bin/python" -m venv "$SHARED_VENV"
+    "$SHARED_VENV/bin/pip" install . 2>&1 || true
+  }
+  cd -
+
+  # 清理旧的 editable pth（如果有）
+  rm -f "$SHARED_VENV/lib/python3.11/site-packages/__editable__"*.pth
+  rm -f "$SHARED_VENV/lib/python3.11/site-packages/__editable__"*.py
+
+  echo "  共享 venv 安装完成"
+else
+  echo "  共享 venv 已存在，跳过"
 fi
 
 # ── 安装 Python 依赖 ─────────────────────────────────────────────────────
-echo "[2/6] 📦 安装 Python 依赖..."
+echo "[3/8] 📦 安装 Python 依赖..."
 HERMES_VENV="$HOME/.hermes/hermes-agent/venv"
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -104,7 +138,7 @@ if [ -f "$PROJECT_DIR/requirements.txt" ]; then
 fi
 
 # ── 创建目录结构 + 配置 ──────────────────────────────────────────────────
-echo "[3/6] 📁 创建目录结构..."
+echo "[4/8] 📁 创建目录结构..."
 mkdir -p "$HOME/.hermes/wechat-pool/logs"
 mkdir -p "$HOME/.hermes/wechat-pool/pool_manager"
 mkdir -p "$HOME/.hermes/wechat-pool/static"
@@ -152,7 +186,7 @@ CONFIGEOF
 echo "  目录结构 + 配置文件创建完成"
 
 # ── 复制并安装 systemd 服务 ─────────────────────────────────────────────
-echo "[4/6] ⚙️ 部署 systemd 服务..."
+echo "[5/8] ⚙️ 部署 systemd 服务..."
 SYSTEMD_DIR="$HOME/.config/systemd/user"
 mkdir -p "$SYSTEMD_DIR"
 
@@ -193,12 +227,12 @@ fi
 echo "  systemd 配置已加载"
 
 # ── 创建 Linux 用户 ──────────────────────────────────────────────────────
-echo "[5/6] 👤 创建 Linux 用户..."
+echo "[6/8] 👤 创建 Linux 用户..."
 python3 "$PROJECT_DIR/scripts/create_profiles.py" \
   --count "$TOTAL" --prefix "wx"
 
 # ── 添加 sudoers 规则 ────────────────────────────────────────────────────
-echo "  配置 sudoers..."
+echo "[7/8] 🔒 配置 sudoers..."
 SUDOERS_FILE="/etc/sudoers.d/hermes-pool"
 sudo tee "$SUDOERS_FILE" > /dev/null << SUDOERSEOF
 # Hermes Pool Manager — passwordless sudo for gateway management
@@ -218,7 +252,7 @@ sudo chmod 440 "$SUDOERS_FILE"
 echo "  sudoers 已配置"
 
 # ── 启动 Pool Manager ────────────────────────────────────────────────────
-echo "[6/6] 🚀 启动 Pool Manager..."
+echo "[8/8] 🚀 启动 Pool Manager..."
 
 systemctl --user enable hermes-pool 2>&1 || echo "  ⚠️ enable 失败"
 
@@ -230,6 +264,14 @@ if command -v loginctl &>/dev/null; then
 fi
 
 systemctl --user restart hermes-pool
+
+# ── 权限收紧 ──────────────────────────────────────────────────────────────
+echo "🔐 权限收紧..."
+# 共享源码目录：仅 dosh 组可访问
+sudo chmod -R o-rwx /opt/hermes/hermes-agent/ 2>/dev/null || true
+# 所有共享文件去掉 world-write
+sudo chmod -R o-w /opt/hermes/ 2>/dev/null || true
+echo "  权限收紧完成"
 
 echo ""
 echo "══════════════════════════════════════════════════"
