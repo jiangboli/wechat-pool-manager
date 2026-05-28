@@ -59,6 +59,41 @@ async def root():
     return {"message": "Pool Manager running. Frontend not found."}
 
 
+@app.get("/api/v1/pool/hot-slots")
+async def get_hot_slots():
+    """获取热池所有槽位——支持前端多坑位展示。"""
+    if not hot_pool:
+        raise HTTPException(503, "热池未启动")
+
+    slots = hot_pool.get_all_slots()
+    bound_count = 0
+    result = []
+
+    for idx, s in enumerate(slots):
+        ps = state.profiles.get(s["profile"], {})
+        is_bound = ps.get("status") in ("bound_healthy", "bound_unhealthy", "bound_idle")
+        if is_bound:
+            bound_count += 1
+        result.append({
+            "profile": s["profile"],
+            "slot_index": idx,
+            "display_name": f"坑位 {idx + 1:03d}",
+            "status": s["status"],            # idle/waiting/scaned/confirmed/expired
+            "qr_url": s["qr_url"],
+            "refreshed_at": s.get("refreshed_at", ""),
+            "bound": is_bound,
+            "user_id": ps.get("user_id", ""),
+            "bound_at": ps.get("bound_at", ""),
+        })
+
+    return {
+        "slots": result,
+        "total_slots": len(slots),
+        "pool_size": hot_pool.pool_size if hot_pool else len(slots),
+        "bound_count": bound_count,
+    }
+
+
 @app.get("/api/v1/pool/available")
 async def get_available_qr():
     """获取一个可用的二维码。返回热池中最新槽位的 QR 码。"""

@@ -2,8 +2,8 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Just Claw Do It</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Just Claw Do It — 抢虾苗大战</title>
 <style>
   *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -15,27 +15,27 @@
     --accent-subtle: rgba(245, 158, 11, 0.08);
     --card-bg: rgba(255, 255, 255, 0.04);
     --card-border: rgba(255, 255, 255, 0.08);
-    --card-glow: rgba(245, 158, 11, 0.06);
+    --card-hover-bg: rgba(255, 255, 255, 0.07);
     --text-primary: rgba(255, 255, 255, 0.92);
     --text-secondary: rgba(255, 255, 255, 0.55);
     --text-muted: rgba(255, 255, 255, 0.30);
     --success: #34d399;
+    --success-glow: rgba(52, 211, 153, 0.2);
     --error: #f87171;
-    --scan-warn: #fbbf24;
-    --radius: 20px;
-    --radius-sm: 12px;
+    --warn: #fbbf24;
+    --warn-glow: rgba(251, 191, 36, 0.15);
+    --radius: 16px;
+    --radius-sm: 10px;
+    --transition: 0.35s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   body {
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
     background: var(--bg-1);
     min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    overflow: hidden;
+    padding: 16px;
     position: relative;
+    overflow-x: hidden;
   }
 
   /* Background orbs */
@@ -43,345 +43,337 @@
     content: '';
     position: fixed;
     border-radius: 50%;
-    filter: blur(100px);
+    filter: blur(120px);
     pointer-events: none;
     z-index: 0;
   }
   body::before {
-    width: 600px; height: 600px;
-    background: radial-gradient(circle, rgba(99, 102, 241, 0.15), transparent);
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, rgba(99, 102, 241, 0.12), transparent);
     top: -200px; right: -100px;
   }
   body::after {
-    width: 500px; height: 500px;
-    background: radial-gradient(circle, rgba(245, 158, 11, 0.08), transparent);
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(245, 158, 11, 0.07), transparent);
     bottom: -150px; left: -100px;
   }
 
-  /* Subtle grain overlay */
   .grain {
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    opacity: 0.03;
+    position: fixed; inset: 0; z-index: 0;
+    pointer-events: none; opacity: 0.03;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
     background-size: 256px 256px;
   }
 
   .container {
-    position: relative;
-    z-index: 1;
-    width: 100%;
-    max-width: 400px;
+    position: relative; z-index: 1;
+    max-width: 900px; margin: 0 auto;
   }
 
-  /* Card */
-  .card {
+  /* ── Header ── */
+  .header {
+    text-align: center; margin-bottom: 16px;
+    padding: 24px 20px 20px;
     background: var(--card-bg);
     backdrop-filter: blur(24px) saturate(1.4);
     -webkit-backdrop-filter: blur(24px) saturate(1.4);
     border: 1px solid var(--card-border);
     border-radius: var(--radius);
-    padding: 36px 28px 32px;
-    box-shadow:
-      0 0 0 1px rgba(255,255,255,0.04),
-      0 8px 32px rgba(0,0,0,0.4),
-      0 2px 8px rgba(0,0,0,0.2),
-      0 0 60px var(--card-glow);
-    transition: box-shadow 0.6s ease;
-    text-align: center;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.03), 0 8px 32px rgba(0,0,0,0.3);
   }
 
-  /* Header */
   .logo {
-    width: 48px;
-    height: 48px;
-    margin: 0 auto 16px;
+    width: 44px; height: 44px;
+    margin: 0 auto 10px;
     background: linear-gradient(135deg, var(--accent), #d97706);
-    border-radius: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 22px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
     box-shadow: 0 4px 16px var(--accent-glow);
   }
 
-  h1 {
-    font-size: 22px;
-    font-weight: 600;
+  .header h1 {
+    font-size: 20px; font-weight: 600;
     letter-spacing: -0.01em;
-    color: var(--text-primary);
-    margin-bottom: 4px;
+    color: var(--text-primary); margin-bottom: 2px;
   }
 
-  .subtitle {
-    font-size: 14px;
-    color: var(--text-secondary);
-    margin-bottom: 8px;
-    font-weight: 400;
+  .header .subtitle {
+    font-size: 13px; color: var(--text-secondary);
+    margin-bottom: 12px;
   }
 
-  .prompt-text {
-    font-size: 12px;
-    color: var(--accent);
-    margin-bottom: 24px;
-    font-weight: 500;
-    letter-spacing: 0.02em;
-    opacity: 0.85;
-    animation: promptFade 2s ease-in-out infinite alternate;
+  /* ── Stats bar ── */
+  .stats-bar {
+    display: flex; align-items: center; justify-content: center;
+    gap: 6px; margin-bottom: 4px;
+  }
+  .stats-bar .num {
+    font-size: 28px; font-weight: 700; color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    min-width: 2ch; letter-spacing: -0.03em;
+  }
+  .stats-bar .label {
+    font-size: 14px; color: var(--text-secondary);
+  }
+  .stats-bar .label strong { color: var(--text-primary); font-weight: 600; }
+
+  .progress-wrap {
+    width: 100%; max-width: 320px; margin: 8px auto 0;
+    height: 4px; border-radius: 2px;
+    background: rgba(255,255,255,0.06);
+    overflow: hidden;
+  }
+  .progress-bar {
+    height: 100%; border-radius: 2px;
+    background: linear-gradient(90deg, var(--accent), #d97706);
+    transition: width 0.8s var(--transition);
+    width: 0%;
   }
 
-  @keyframes promptFade {
-    0% { opacity: 0.65; }
-    100% { opacity: 1; }
-  }
-
-  /* QR Box */
-  .qr-wrapper {
+  /* ── Ticker ── */
+  .ticker-wrap {
+    margin-top: 10px;
+    height: 24px; overflow: hidden;
     position: relative;
-    margin: 0 auto 20px;
-    width: 220px;
-    height: 220px;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.03);
+  }
+  .ticker-inner {
+    position: absolute; white-space: nowrap;
+    will-change: transform;
+    font-size: 12px; color: var(--text-muted);
+    line-height: 24px; padding: 0 12px;
+    animation: tickerScroll 20s linear infinite;
+  }
+  @keyframes tickerScroll {
+    0% { transform: translateX(100%); }
+    100% { transform: translateX(-100%); }
+  }
+  .ticker-inner span { color: var(--success); font-weight: 500; }
+
+  /* ── Slot grid ── */
+  .slot-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
   }
 
-  .qr-box {
-    width: 100%;
-    height: 100%;
-    border-radius: var(--radius-sm);
-    background: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  .slot-card {
+    background: var(--card-bg);
+    backdrop-filter: blur(24px) saturate(1.4);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius);
+    padding: 16px;
+    text-align: center;
+    transition: all var(--transition);
     position: relative;
     overflow: hidden;
-    transition: box-shadow 0.5s ease, transform 0.3s ease;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.3);
   }
 
-  .qr-box img {
-    width: 180px;
-    height: 180px;
+  .slot-card:hover {
+    background: var(--card-hover-bg);
+    border-color: rgba(255,255,255,0.12);
+  }
+
+  /* Slot index badge */
+  .slot-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px; font-weight: 600;
+    color: var(--text-secondary);
+    background: rgba(255,255,255,0.05);
+    margin-bottom: 8px;
+  }
+
+  /* QR code box */
+  .qr-wrap {
+    width: 140px; height: 140px;
+    margin: 0 auto 8px;
+    border-radius: var(--radius-sm);
+    background: white;
+    display: flex; align-items: center; justify-content: center;
+    position: relative; overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    transition: all var(--transition);
+  }
+  .qr-wrap img {
+    width: 120px; height: 120px;
     display: block;
     image-rendering: pixelated;
   }
-
-  .qr-placeholder {
-    color: #999;
-    font-size: 13px;
-    text-align: center;
-    line-height: 1.5;
-    padding: 20px;
+  .qr-wrap .qr-placeholder {
+    color: #999; font-size: 11px;
+    text-align: center; line-height: 1.4; padding: 10px;
   }
-
-  /* QR breathing pulse */
-  .qr-box.pulsing {
-    animation: qrPulse 2.5s ease-in-out infinite;
-  }
-
-  @keyframes qrPulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.15); }
-    50% { box-shadow: 0 0 0 12px rgba(245, 158, 11, 0); }
-  }
-
-  .qr-box.success {
-    box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.3), 0 0 40px rgba(52, 211, 153, 0.1);
-  }
-  .qr-box.success img { display: none; }
-  .qr-box .success-icon {
-    display: none;
-    font-size: 56px;
-    line-height: 1;
-  }
-  .qr-box.success .success-icon { display: block; animation: successPop 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
-  @keyframes successPop {
-    0% { transform: scale(0); opacity: 0; }
-    100% { transform: scale(1); opacity: 1; }
-  }
-
-  .qr-box.error {
-    box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.2);
-  }
-
-  /* Outer ring decoration */
-  .qr-wrapper::before {
-    content: '';
-    position: absolute;
-    inset: -6px;
-    border-radius: calc(var(--radius-sm) + 6px);
-    border: 1px solid rgba(255,255,255,0.06);
-    pointer-events: none;
-  }
-
-  /* Status */
-  .status {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    min-height: 28px;
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--text-secondary);
-    margin-bottom: 4px;
-    transition: color 0.3s;
-  }
-
-  .status .dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--text-muted);
-    transition: background 0.3s;
-  }
-  .status .dot.pulse {
-    animation: dotPulse 1.2s ease-in-out infinite;
-  }
-
-  @keyframes dotPulse {
-    0%, 100% { opacity: 0.3; transform: scale(1); }
-    50% { opacity: 1; transform: scale(1.3); }
-  }
-
-  .status.waiting { color: var(--accent); }
-  .status.waiting .dot { background: var(--accent); }
-
-  .status.scanned { color: var(--scan-warn); }
-  .status.scanned .dot { background: var(--scan-warn); }
-
-  .status.success { color: var(--success); }
-  .status.success .dot { background: var(--success); }
-
-  .status.error { color: var(--error); }
-  .status.error .dot { background: var(--error); }
-
-  .countdown {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-bottom: 20px;
-    font-variant-numeric: tabular-nums;
-    min-height: 18px;
-  }
-
-  /* Steps */
-  .steps {
-    display: flex;
-    gap: 6px;
-    margin-bottom: 20px;
-  }
-
-  .step {
-    flex: 1;
-    padding: 10px 8px;
-    border-radius: 8px;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.04);
-    text-align: center;
-  }
-
-  .step-num {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: var(--accent-subtle);
-    color: var(--accent);
-    font-size: 11px;
-    font-weight: 600;
-    margin-bottom: 4px;
-  }
-
-  .step-label {
-    font-size: 11px;
-    color: var(--text-muted);
-    line-height: 1.3;
-  }
-
-  /* Refresh button */
-  .refresh-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 10px 24px;
-    background: rgba(255,255,255,0.06);
-    color: var(--text-secondary);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 10px;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    font-family: inherit;
-  }
-
-  .refresh-btn:hover:not(:disabled) {
-    background: rgba(255,255,255,0.10);
-    color: var(--text-primary);
-    border-color: rgba(255,255,255,0.15);
-  }
-
-  .refresh-btn:active:not(:disabled) {
-    transform: scale(0.97);
-  }
-
-  .refresh-btn:disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
-  }
-
-  .refresh-btn .icon {
-    font-size: 14px;
-    transition: transform 0.4s ease;
-  }
-  .refresh-btn:not(:disabled):hover .icon {
-    transform: rotate(180deg);
-  }
-
-  /* Stats */
-  .stats {
-    margin-top: 20px;
-    padding-top: 16px;
-    border-top: 1px solid rgba(255,255,255,0.06);
-    font-size: 12px;
-    color: var(--text-muted);
-  }
-
-  /* Loading skeleton for QR */
   .qr-skeleton {
-    width: 180px;
-    height: 180px;
-    border-radius: 8px;
+    width: 120px; height: 120px;
+    border-radius: 6px;
     background: linear-gradient(135deg, #e8e8e8 25%, #f5f5f5 50%, #e8e8e8 75%);
     background-size: 200% 200%;
     animation: skeleton 1.5s ease-in-out infinite;
   }
-
   @keyframes skeleton {
     0% { background-position: 0% 50%; }
     50% { background-position: 100% 50%; }
     100% { background-position: 0% 50%; }
   }
 
-  /* Responsive */
-  @media (max-width: 440px) {
-    body { padding: 12px; }
-    .card { padding: 24px 16px 24px; border-radius: 16px; }
-    .qr-wrapper { width: 180px; height: 180px; }
-    .qr-box img { width: 150px; height: 150px; }
-    .qr-skeleton { width: 150px; height: 150px; }
-    h1 { font-size: 20px; }
-    .steps { flex-direction: column; gap: 4px; }
-    .step { display: flex; align-items: center; gap: 8px; padding: 8px 12px; text-align: left; }
-    .step-num { margin-bottom: 0; flex-shrink: 0; }
+  /* Breathing pulse for waiting */
+  .qr-wrap.pulse-waiting {
+    animation: qrPulseAmber 2.5s ease-in-out infinite;
+  }
+  @keyframes qrPulseAmber {
+    0%, 100% { box-shadow: 0 0 0 0 var(--accent-glow); }
+    50% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0.08); }
+  }
+
+  /* Scanned flash */
+  .qr-wrap.pulse-scanned {
+    animation: scanFlash 0.6s ease 2;
+  }
+  @keyframes scanFlash {
+    0%, 100% { box-shadow: 0 0 0 0 var(--warn-glow); }
+    50% { box-shadow: 0 0 0 12px rgba(251, 191, 36, 0.2); }
+  }
+
+  /* Bound success — hide QR, show checkmark */
+  .qr-wrap.bound {
+    background: linear-gradient(135deg, rgba(52, 211, 153, 0.1), rgba(16, 185, 129, 0.05));
+    border: 1px solid rgba(52, 211, 153, 0.2);
+    animation: successPop 0.6s var(--transition);
+  }
+  .qr-wrap.bound img { display: none; }
+  .qr-wrap.bound .qr-placeholder { display: none; }
+  .qr-wrap.bound .bound-icon { display: flex; }
+
+  .bound-icon {
+    display: none;
+    font-size: 42px; line-height: 1;
+    color: var(--success);
+    animation: successPop 0.6s var(--transition);
+  }
+  @keyframes successPop {
+    0% { transform: scale(0); opacity: 0; }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  /* Status label */
+  .slot-status {
+    display: flex; align-items: center; justify-content: center;
+    gap: 5px; font-size: 13px; font-weight: 500;
+    min-height: 20px; margin-bottom: 2px;
+    transition: all var(--transition);
+  }
+  .slot-status .dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    transition: background 0.3s;
+  }
+  .slot-status .dot.pulse {
+    animation: dotPulse 1.2s ease-in-out infinite;
+  }
+  @keyframes dotPulse {
+    0%, 100% { opacity: 0.3; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.4); }
+  }
+
+  .slot-status.waiting { color: var(--accent); }
+  .slot-status.waiting .dot { background: var(--accent); }
+
+  .slot-status.scaned { color: var(--warn); }
+  .slot-status.scaned .dot { background: var(--warn); }
+  .slot-status.scan-flash .dot { animation: none; background: var(--warn); }
+
+  .slot-status.bound { color: var(--success); }
+  .slot-status.bound .dot { background: var(--success); }
+
+  .slot-status.expired { color: var(--error); }
+  .slot-status.expired .dot { background: var(--error); }
+
+  .slot-status.idle { color: var(--text-muted); }
+  .slot-status.idle .dot { background: var(--text-muted); }
+
+  .slot-time {
+    font-size: 10px; color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Confetti burst on bound ── */
+  .confetti-container {
+    position: absolute; inset: 0;
+    pointer-events: none; overflow: hidden;
+  }
+  .confetti-piece {
+    position: absolute; width: 6px; height: 6px;
+    border-radius: 2px;
+    animation: confettiFall 1.2s ease-out forwards;
+  }
+  @keyframes confettiFall {
+    0% { transform: translateY(20px) rotate(0deg); opacity: 1; }
+    100% { transform: translateY(-60px) rotate(360deg); opacity: 0; }
+  }
+
+  /* ── Loading / Error state ── */
+  .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .empty-state .icon { font-size: 40px; margin-bottom: 12px; display: block; }
+  .empty-state .retry-btn {
+    margin-top: 12px;
+    padding: 8px 20px;
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.04);
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.2s;
+  }
+  .empty-state .retry-btn:hover {
+    background: rgba(255,255,255,0.08);
+    color: var(--text-primary);
+  }
+
+  /* ── Footer ── */
+  .footer {
+    text-align: center;
+    margin-top: 16px;
+    padding: 12px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 600px) {
+    body { padding: 10px; }
+    .header { padding: 18px 14px 16px; }
+    .slot-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+    .slot-card { padding: 12px; }
+    .qr-wrap { width: 110px; height: 110px; }
+    .qr-wrap img { width: 90px; height: 90px; }
+    .qr-skeleton { width: 90px; height: 90px; }
+  }
+
+  @media (max-width: 360px) {
+    .slot-grid { grid-template-columns: 1fr 1fr; }
+    .qr-wrap { width: 90px; height: 90px; }
+    .qr-wrap img { width: 70px; height: 70px; }
+    .qr-skeleton { width: 70px; height: 70px; }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .qr-box.pulsing { animation: none; }
-    .qr-skeleton { animation: none; }
-    .refresh-btn .icon { transition: none; }
-    .refresh-btn:not(:disabled):hover .icon { transform: none; }
+    .qr-wrap.pulse-waiting { animation: none; }
+    .ticker-inner { animation: none; transform: none; }
+    .confetti-piece { animation: none; }
   }
 </style>
 </head>
@@ -389,224 +381,229 @@
 <div class="grain"></div>
 
 <div class="container">
-  <div class="card" id="card">
-    <!-- Logo -->
+  <!-- Header -->
+  <div class="header">
     <div class="logo">🦞</div>
-
-    <!-- Title -->
     <h1>Just Claw Do It</h1>
-    <p class="subtitle">在微信里养一只属于自己的虾</p>
-
-    <!-- Prompt -->
-    <p class="prompt-text">📢 请及时领取您的虾苗</p>
-
-    <!-- QR Code -->
-    <div class="qr-wrapper">
-      <div class="qr-box pulsing" id="qrBox">
-        <div class="qr-placeholder" id="qrContent">
-          <div class="qr-skeleton"></div>
-        </div>
-        <div class="success-icon">✓</div>
-      </div>
-    </div>
-
-    <!-- Status -->
-    <div class="status" id="status">
-      <span class="dot pulse" id="statusDot"></span>
-      <span id="statusText">准备中...</span>
-    </div>
-    <div class="countdown" id="countdown"></div>
-
-    <!-- Steps -->
-    <div class="steps">
-      <div class="step">
-        <div class="step-num">1</div>
-        <div class="step-label">打开微信「扫一扫」</div>
-      </div>
-      <div class="step">
-        <div class="step-num">2</div>
-        <div class="step-label">扫描上方二维码</div>
-      </div>
-      <div class="step">
-        <div class="step-num">3</div>
-        <div class="step-label">确认登录，自动绑定</div>
-      </div>
-    </div>
-
-    <!-- Refresh -->
-    <button class="refresh-btn" id="refreshBtn" onclick="refreshQR()">
-      <span class="icon">↻</span>
-      刷新二维码
-    </button>
+    <p class="subtitle">🔥 抢虾苗大战 · 先到先得 🔥</p>
 
     <!-- Stats -->
-    <div class="stats" id="stats"></div>
+    <div class="stats-bar">
+      <span class="num" id="boundNum">0</span>
+      <span class="label">/ <strong id="totalNum">0</strong> 个席位已被领养</span>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+
+    <!-- Ticker -->
+    <div class="ticker-wrap">
+      <div class="ticker-inner" id="ticker">📢 扫描二维码即可领养您的 do 大龙虾 🦞</div>
+    </div>
   </div>
+
+  <!-- Slot Grid -->
+  <div class="slot-grid" id="slotGrid">
+    <div class="empty-state" id="emptyState">
+      <span class="icon">🦞</span>
+      正在加载坑位...
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">Just Claw Do It — 在微信里养一只属于自己的虾</div>
 </div>
 
 <script>
 const API_BASE = '';
-let currentSlot = null;
-let qrTimer = null;
-let statusTimer = null;
-let imageRefreshTimer = null;
-let countdownValue = 50;
-let lastQrUrl = '';
+const POLL_INTERVAL = 2000;
+const TICKER_ITEMS = [];
 
-function showError(msg) {
-  const qrBox = document.getElementById('qrBox');
-  qrBox.className = 'qr-box error';
-  qrBox.classList.remove('pulsing');
-  document.getElementById('qrContent').innerHTML = '<div class="qr-placeholder">' + msg + '</div>';
-  setStatus(msg, 'error');
+let prevSlots = {};  // profile → status for transition detection
+
+// ── Render ──
+
+function renderSlots(data) {
+  const grid = document.getElementById('slotGrid');
+  const empty = document.getElementById('emptyState');
+
+  if (!data || !data.slots || data.slots.length === 0) {
+    if (empty) {
+      empty.style.display = 'block';
+      empty.innerHTML = '<span class="icon">🕐</span>暂无可用坑位<br><small>稍等片刻，新坑位即将就绪</small>';
+    }
+    return;
+  }
+
+  if (empty) empty.style.display = 'none';
+
+  // Update stats
+  document.getElementById('boundNum').textContent = data.bound_count;
+  document.getElementById('totalNum').textContent = data.total_slots;
+  const pct = data.total_slots > 0 ? (data.bound_count / data.total_slots * 100) : 0;
+  document.getElementById('progressBar').style.width = pct + '%';
+
+  // Build cards
+  let html = '';
+  for (const s of data.slots) {
+    const prevStatus = prevSlots[s.profile];
+    prevSlots[s.profile] = s.status;
+
+    // Detect transitions for animation
+    const justBound = prevStatus && prevStatus !== 'bound' && s.bound;
+    const justScanned = prevStatus === 'waiting' && s.status === 'scaned';
+    const isNew = prevStatus === undefined;
+
+    const statusClass = getStatusClass(s, justBound, justScanned);
+
+    html += '<div class="slot-card" data-profile="' + s.profile + '">';
+    html += '  <div class="slot-badge">🎯 ' + s.display_name + '</div>';
+
+    // QR / bound icon
+    html += '  <div class="qr-wrap ' + getQrClass(s, justBound) + '" id="qr-' + s.profile + '">';
+    if (s.bound) {
+      html += '    <div class="bound-icon">✓</div>';
+      if (justBound) {
+        html += '    <div class="confetti-container" id="confetti-' + s.profile + '"></div>';
+      }
+    } else if (s.qr_url) {
+      html += '    <img src="/api/v1/pool/qr-image/' + s.profile + '?t=' + Date.now() + '" alt="二维码" loading="lazy">';
+    } else {
+      html += '    <div class="qr-placeholder">获取中<br>请稍候...</div>';
+    }
+    html += '  </div>';
+
+    // Status
+    html += '  <div class="slot-status ' + statusClass + '" id="status-' + s.profile + '">';
+    html += '    <span class="dot' + (s.status === 'waiting' && !s.bound ? ' pulse' : '') + '"></span>';
+    html += '    <span>' + getStatusText(s) + '</span>';
+    html += '  </div>';
+
+    // Time
+    if (s.refreshed_at && !s.bound) {
+      html += '  <div class="slot-time">🔄 ' + s.refreshed_at + '</div>';
+    }
+    if (s.bound_at) {
+      html += '  <div class="slot-time">✅ ' + s.bound_at + '</div>';
+    }
+    html += '</div>';
+
+    // Ticker: new bound
+    if (justBound && s.user_id) {
+      TICKER_ITEMS.unshift(s.display_name + ' 已被 ' + s.user_id + ' 领养了！🎉');
+    } else if (justScanned) {
+      TICKER_ITEMS.unshift(s.display_name + ' 已被扫码！🔥');
+    }
+
+    // Confetti burst
+    if (justBound) {
+      setTimeout(() => spawnConfetti(s.profile), 100);
+    }
+  }
+
+  grid.innerHTML = html;
+
+  // Update ticker
+  updateTicker();
 }
 
-function showLoading() {
-  const qrBox = document.getElementById('qrBox');
-  qrBox.className = 'qr-box';
-  qrBox.classList.add('pulsing');
-  document.getElementById('qrContent').innerHTML = '<div class="qr-skeleton"></div>';
-  setStatus('获取中...', '');
+function getStatusClass(s, justBound, justScanned) {
+  if (s.bound) return 'bound';
+  if (s.status === 'scaned') return 'scaned';
+  if (s.status === 'expired' || s.status === 'expired') return 'expired';
+  if (s.status === 'waiting') return 'waiting';
+  if (s.status === 'idle') return 'idle';
+  return '';
 }
 
-function showQR(url, slotId) {
-  currentSlot = slotId;
-  lastQrUrl = url;
-  const qrBox = document.getElementById('qrBox');
-  qrBox.className = 'qr-box';
-  qrBox.classList.add('pulsing');
-  document.getElementById('qrContent').innerHTML =
-    '<img src="/api/v1/pool/qr-image/' + slotId + '?t=' + Date.now() +
-    '" alt="微信二维码" id="qrImg" onerror="this.onerror=null;showError(\'二维码加载失败\')">';
-  setStatus('等待扫码...', 'waiting');
-  document.getElementById('refreshBtn').disabled = false;
+function getQrClass(s, justBound) {
+  if (s.bound) return 'bound';
+  if (s.status === 'waiting') return 'pulse-waiting';
+  if (s.status === 'scaned') return 'pulse-scanned';
+  return '';
 }
 
-function refreshSlotImage() {
-  // 同 slot 刷新图片（不换 slot_id），带缓存破坏
-  if (!currentSlot) return;
-  const img = document.getElementById('qrImg');
-  if (img) {
-    img.src = '/api/v1/pool/qr-image/' + currentSlot + '?t=' + Date.now();
+function getStatusText(s) {
+  if (s.bound) return '已被领养 ✅';
+  if (s.status === 'scaned') return '已被扫码 🔍';
+  if (s.status === 'expired') return '已过期 ❌';
+  if (s.status === 'waiting') return '待抢 🔥';
+  if (s.status === 'idle') return '准备中...';
+  return s.status;
+}
+
+// ── Confetti ──
+
+function spawnConfetti(profile) {
+  const container = document.getElementById('confetti-' + profile);
+  if (!container) return;
+  const colors = ['#f59e0b', '#34d399', '#6366f1', '#f87171', '#fbbf24', '#a78bfa'];
+  for (let i = 0; i < 16; i++) {
+    const piece = document.createElement('div');
+    piece.className = 'confetti-piece';
+    piece.style.left = (Math.random() * 80 + 10) + '%';
+    piece.style.top = (Math.random() * 40 + 60) + '%';
+    piece.style.background = colors[Math.floor(Math.random() * colors.length)];
+    piece.style.animationDelay = (Math.random() * 0.3) + 's';
+    piece.style.width = (Math.random() * 4 + 4) + 'px';
+    piece.style.height = (Math.random() * 4 + 4) + 'px';
+    container.appendChild(piece);
+  }
+  setTimeout(() => { if (container) container.innerHTML = ''; }, 1600);
+}
+
+// ── Ticker ──
+
+function updateTicker() {
+  const ticker = document.getElementById('ticker');
+  if (TICKER_ITEMS.length > 0) {
+    const text = TICKER_ITEMS.slice(0, 8).join(' &nbsp;·&nbsp; ');
+    ticker.innerHTML = '🔥 ' + text + ' &nbsp;·&nbsp; 📢 手慢无！';
+    // Restart animation
+    ticker.style.animation = 'none';
+    void ticker.offsetWidth;
+    ticker.style.animation = 'tickerScroll 25s linear infinite';
   }
 }
 
-function showScanned() {
-  setStatus('已扫码！请在手机上确认...', 'scanned');
-}
+// ── Polling ──
 
-function showSuccess() {
-  const qrBox = document.getElementById('qrBox');
-  qrBox.className = 'qr-box success';
-  qrBox.classList.remove('pulsing');
-  document.getElementById('qrContent').innerHTML = '';
-  setStatus('绑定成功！你已领养了一只 do 大龙虾 ✨', 'success');
-  document.getElementById('refreshBtn').disabled = true;
-  if (qrTimer) clearInterval(qrTimer);
-  if (statusTimer) clearInterval(statusTimer);
-  if (imageRefreshTimer) clearInterval(imageRefreshTimer);
-}
-
-function setStatus(text, type) {
-  const el = document.getElementById('status');
-  const dot = document.getElementById('statusDot');
-  const textEl = document.getElementById('statusText');
-  el.className = 'status' + (type ? ' ' + type : '');
-  dot.className = 'dot' + (type ? ' pulse' : '');
-  textEl.textContent = text;
-}
-
-async function fetchQR() {
+async function pollSlots() {
   try {
-    const resp = await fetch(API_BASE + '/api/v1/pool/available');
+    const resp = await fetch(API_BASE + '/api/v1/pool/hot-slots');
     if (!resp.ok) {
-      showError('暂无可用二维码，请稍后再试');
+      if (resp.status === 503) {
+        document.getElementById('slotGrid').innerHTML =
+          '<div class="empty-state"><span class="icon">🕐</span>热池尚未启动<br><small>请稍后刷新</small></div>';
+      }
       return;
     }
     const data = await resp.json();
-    showQR(data.qr_url, data.slot_id);
-    countdownValue = 50;
-    startPollingStatus(data.slot_id);
+    renderSlots(data);
   } catch (e) {
-    showError('网络错误，请检查连接');
+    // Silently retry on next poll
   }
 }
 
-async function pollStatus(slotId) {
-  try {
-    const resp = await fetch(API_BASE + '/api/v1/pool/status/' + slotId);
-    if (!resp.ok) return;
-    const data = await resp.json();
-    if (data.bound) { showSuccess(); return; }
-    if (data.qr_status === 'scaned') { showScanned(); return; }
-    // 检测二维码过期→自动重载同 slot 图片
-    if (data.qr_status === 'expired') {
-      setStatus('二维码已过期，正在刷新...', 'error');
-      setTimeout(refreshSlotImage, 500);
-      return;
-    }
-    // 检测后端是否刷新了二维码（同 slot，新 qr_url）
-    if (data.qr_url && data.qr_url !== lastQrUrl) {
-      lastQrUrl = data.qr_url;
-      refreshSlotImage();
-    }
-  } catch (e) {}
-}
+// ── Image lazy refresh (per slot, every 20s) ──
 
-function startPollingStatus(slotId) {
-  if (statusTimer) clearInterval(statusTimer);
-  statusTimer = setInterval(() => pollStatus(slotId), 2000);
-}
-
-function startCountdown() {
-  if (qrTimer) clearInterval(qrTimer);
-  qrTimer = setInterval(() => {
-    countdownValue--;
-    document.getElementById('countdown').textContent =
-      countdownValue + 's 后自动刷新';
-    if (countdownValue <= 0) refreshQR();
-  }, 1000);
-}
-
-// 每 25 秒刷新同 slot 二维码图片（防缓存过期）
 function startImageRefresh() {
-  if (imageRefreshTimer) clearInterval(imageRefreshTimer);
-  imageRefreshTimer = setInterval(() => {
-    if (currentSlot && document.getElementById('qrImg')) {
-      refreshSlotImage();
-    }
-  }, 25000);
+  setInterval(() => {
+    document.querySelectorAll('.slot-card img').forEach(img => {
+      const src = img.getAttribute('src');
+      if (src && src.includes('/api/v1/pool/qr-image/')) {
+        const base = src.split('?')[0];
+        img.src = base + '?t=' + Date.now();
+      }
+    });
+  }, 20000);
 }
 
-async function refreshQR() {
-  if (document.getElementById('refreshBtn').disabled) return;
-  showLoading();
-  if (statusTimer) clearInterval(statusTimer);
-  if (qrTimer) clearInterval(qrTimer);
-  if (imageRefreshTimer) clearInterval(imageRefreshTimer);
-  document.getElementById('countdown').textContent = '刷新中...';
-  await fetchQR();
-  startCountdown();
-  startImageRefresh();
-}
+// ── Init ──
 
-async function fetchStats() {
-  try {
-    const resp = await fetch(API_BASE + '/api/v1/pool/stats');
-    if (!resp.ok) return;
-    const data = await resp.json();
-    document.getElementById('stats').textContent =
-      '已绑定 ' + data.bound + ' / 总 ' + data.total_profiles + ' 个席位';
-  } catch (e) {}
-}
-
-// Init
-showLoading();
-fetchQR();
-startCountdown();
+pollSlots();
+setInterval(pollSlots, POLL_INTERVAL);
 startImageRefresh();
-fetchStats();
-setInterval(fetchStats, 10000);
 </script>
 </body>
 </html>
