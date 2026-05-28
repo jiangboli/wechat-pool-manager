@@ -253,13 +253,14 @@ class HotPool:
         self._tasks[profile] = task
 
     async def _on_confirmed(self, result: dict):
-        """QR 确认回调——保存凭证。"""
+        """QR 确认回调——保存凭证 + home channel。"""
         profile = result["profile"]
         ok = self.pm.set_weixin_credentials(
             profile,
             account_id=result["account_id"],
             token=result["token"],
             base_url=result.get("base_url", ""),
+            user_id=result.get("user_id", ""),
         )
         if ok:
             logger.info("[%s] 凭证已写入 .env", profile)
