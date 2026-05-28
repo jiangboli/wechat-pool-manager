@@ -1,7 +1,11 @@
 """Pool Manager 主服务——FastAPI 应用。
 
-启动方式：
+启动方式（Docker 模式）：
     python -m pool_manager.service --config /path/to/config.yaml
+
+架构变化（v3.0）：
+    每个微信用户一个 Docker 容器，由 DockerScheduler 管理
+    Pool Manager 自身也在 Docker 中运行
 """
 
 import argparse
@@ -26,6 +30,7 @@ from .hot_pool import HotPool
 from . import gateway_manager as gm
 from . import profile_manager as pm
 from . import proxy as llm_proxy
+from . import docker_scheduler as ds
 
 # ── 日志 ──────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -35,11 +40,13 @@ logging.basicConfig(
 logger = logging.getLogger("pool_manager")
 
 # ── 全局实例 ──────────────────────────────────────────────────────────
-app = FastAPI(title="WeChat Gateway Pool Manager", version="2.0.0")
+app = FastAPI(title="WeChat Gateway Pool Manager", version="3.0.0")
 config: dict = {}
 state = PoolState()
 hot_pool: Optional[HotPool] = None
 pool_task: Optional[asyncio.Task] = None
+scheduler: Optional[ds.DockerScheduler] = None
+health_task: Optional[asyncio.Task] = None
 
 # ── 静态文件 ──────────────────────────────────────────────────────────
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "../static")
@@ -171,19 +178,20 @@ async def get_pool_stats():
 
 @app.get("/api/v1/gateways")
 async def list_gateways():
-    """列出所有 gateway 及其状态（基于 Linux 用户列表）。"""
-    users = list_linux_users("wx")
+    """列出所有 gateway 及其状态（基于 Docker 容器列表）。"""
+    if not scheduler:
+        return {"gateways": [], "total": 0}
+    containers = scheduler.list_containers()
     result = []
-    for luser in users:
-        profile = f"weixin-{luser.lstrip('wx')}"  # wx001 → weixin-001
+    for c in containers:
+        profile = c["profile"]
         ps = state.profiles.get(profile, {})
-        active, act_str = gm.is_active(profile)
         result.append({
             "profile": profile,
-            "linux_user": luser,
+            "container_name": c.get("container_name", ""),
             "status": ps.get("status", "unknown"),
-            "active": active,
-            "state": act_str,
+            "active": c.get("running", False),
+            "docker_status": c.get("status", "unknown"),
             "bound_at": ps.get("bound_at", ""),
             "last_active": ps.get("last_active", ""),
             "user_id": ps.get("user_id", ""),
@@ -194,41 +202,63 @@ async def list_gateways():
 
 @app.post("/api/v1/gateway/{profile}/start")
 async def start_gateway(profile: str):
-    ok, msg = gm.start(profile)
+    if not scheduler:
+        raise HTTPException(503, "DockerScheduler 未初始化")
+    ok = scheduler.create_container(profile)
     if ok:
         state.set_status(profile, "bound_healthy")
         return {"success": True, "message": f"Gateway {profile} 已启动"}
-    raise HTTPException(500, f"启动失败: {msg}")
+    raise HTTPException(500, "启动失败")
 
 
 @app.post("/api/v1/gateway/{profile}/stop")
 async def stop_gateway(profile: str):
-    ok, msg = gm.stop(profile)
+    if not scheduler:
+        raise HTTPException(503, "DockerScheduler 未初始化")
+    ok = scheduler.stop_container(profile)
     if ok:
         state.set_status(profile, "bound_idle")
         return {"success": True, "message": f"Gateway {profile} 已停止"}
-    raise HTTPException(500, f"停止失败: {msg}")
+    raise HTTPException(500, "停止失败")
 
 
 @app.post("/api/v1/gateway/{profile}/restart")
 async def restart_gateway(profile: str):
-    ok, msg = gm.restart(profile)
+    if not scheduler:
+        raise HTTPException(503, "DockerScheduler 未初始化")
+    ok = scheduler.restart_container(profile)
     if ok:
         state.set_status(profile, "bound_healthy")
         return {"success": True, "message": f"Gateway {profile} 已重启"}
-    raise HTTPException(500, f"重启失败: {msg}")
+    raise HTTPException(500, "重启失败")
+
+
+@app.get("/api/v1/gateway/{profile}/logs")
+async def get_gateway_logs(profile: str, tail: int = 50):
+    if not scheduler:
+        raise HTTPException(503, "DockerScheduler 未初始化")
+    logs = scheduler.get_container_logs(profile, tail=tail)
+    return {"profile": profile, "logs": logs}
 
 
 @app.post("/api/v1/pool/sync-models")
 async def sync_models():
-    """一键同步凭证池和模型配置到所有微信用户。"""
+    """一键同步模型配置到所有微信用户。"""
+    if not scheduler:
+        return {"synced": 0, "message": "DockerScheduler 未初始化"}
     count, msg = gm.sync_model_config()
     return {"synced": count, "message": msg}
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "pool_stats": state.get_stats()}
+    container_count = scheduler.list_containers() if scheduler else []
+    return {
+        "status": "ok",
+        "version": "3.0.0",
+        "pool_stats": state.get_stats(),
+        "containers": len(container_count),
+    }
 
 
 # ═════════════════════════════════════════════════════════════════════
@@ -236,49 +266,9 @@ async def health():
 # ═════════════════════════════════════════════════════════════════════
 
 
-async def _health_check_loop():
-    interval = config.get("gateway", {}).get("health_check_interval", 60)
-    max_restarts = config.get("gateway", {}).get("max_restart_attempts", 3)
-    while True:
-        await asyncio.sleep(interval)
-        bound = state.get_by_status("bound_healthy") + state.get_by_status("bound_unhealthy")
-        for name in bound:
-            active, _ = gm.is_active(name)
-            ps = state.profiles.get(name, {})
-            if not active:
-                restart_count = ps.get("restart_count", 0) + 1
-                state.profiles[name]["restart_count"] = restart_count
-                if restart_count <= max_restarts:
-                    logger.warning("[%s] gateway 不活跃，尝试重启（%d/%d）", name, restart_count, max_restarts)
-                    ok, _ = gm.restart(name)
-                    if ok:
-                        state.set_status(name, "bound_healthy", restart_count=restart_count)
-                    else:
-                        state.set_status(name, "bound_unhealthy", error=f"重启失败 ({restart_count}/{max_restarts})")
-                else:
-                    state.set_status(name, "bound_unhealthy", error="超过最大重启次数")
-        state.save()
-
-
-async def _save_loop():
-    while True:
-        await asyncio.sleep(30)
-        state.save()
-
-
-async def _idle_check_loop():
-    while True:
-        await asyncio.sleep(300)
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 启动入口
-# ═════════════════════════════════════════════════════════════════════
-
-
 @app.on_event("startup")
 async def startup():
-    global hot_pool, pool_task
+    global hot_pool, pool_task, scheduler, health_task
 
     prefix = config.get("pool", {}).get("profile_prefix", "weixin-")
     total = config.get("pool", {}).get("total_profiles", 100)
@@ -286,24 +276,19 @@ async def startup():
     # 加载历史状态
     state.load()
 
-    # 初始化 profile 列表（从 Linux 用户列表读取）
-    existing_users = list_linux_users("wx")
-    if not existing_users:
-        logger.info("尚未创建 Linux 用户，开始批量创建 %d 个...", total)
-        import subprocess
-        script = os.path.join(os.path.dirname(__file__), "../scripts/create_profiles.py")
-        subprocess.run(
-            [sys.executable, script, "--count", str(total), "--prefix", "wx"],
-            capture_output=True, timeout=120)
-        existing_users = list_linux_users("wx")
-        logger.info("已创建 %d 个 Linux 用户", len(existing_users))
+    # ── 初始化 DockerScheduler ──
+    scheduler = ds.DockerScheduler(config)
+    gm.set_scheduler(scheduler)
 
-    # 将 Linux 用户名转为 profile 名用于状态管理
+    # 确保 Docker 网络和镜像
+    scheduler.ensure_network()
+    if not scheduler.ensure_image():
+        logger.warning("hermes-bot 镜像不存在！请先构建: docker build -f Dockerfile.bot -t hermes-bot:latest .")
+
+    # ── 初始化 profile 列表（按编号生成）──
     profile_names = []
-    for luser in existing_users:
-        # wx001 → weixin-001
-        suffix = luser.lstrip("wx")
-        profile = f"weixin-{suffix}"
+    for i in range(1, total + 1):
+        profile = f"{prefix}{i:03d}"
         profile_names.append(profile)
     state.init_profiles(profile_names)
 
@@ -312,7 +297,7 @@ async def startup():
         ps = state.profiles[name]
         if ps.get("status") in ("in_hot_pool", "qr_failed"):
             state.mark_available(name)
-    logger.info("池状态已初始化，共 %d 个槽位", len(existing_users))
+    logger.info("池状态已初始化，共 %d 个槽位", len(profile_names))
 
     # 启动 LLM Proxy
     llm_proxy.init_proxy()
@@ -322,12 +307,15 @@ async def startup():
     hot_pool = HotPool(config, state, pm, gm)
     pool_task = asyncio.create_task(hot_pool.start())
 
-    # 启动后台任务
-    asyncio.create_task(_health_check_loop())
-    asyncio.create_task(_save_loop())
-    asyncio.create_task(_idle_check_loop())
+    # 启动 Docker 健康检查循环
+    health_interval = config.get("gateway", {}).get("health_check_interval", 60)
+    max_restarts = config.get("gateway", {}).get("max_restart_attempts", 3)
+    health_task = asyncio.create_task(scheduler.health_check_loop(
+        interval=health_interval,
+        max_restarts=max_restarts,
+    ))
 
-    logger.info("Pool Manager v2 启动完成")
+    logger.info("Pool Manager v3 (Docker 模式) 启动完成")
 
 
 @app.on_event("shutdown")
@@ -336,6 +324,10 @@ async def shutdown():
         await hot_pool.stop()
         if pool_task:
             pool_task.cancel()
+    if health_task:
+        health_task.cancel()
+    if scheduler:
+        scheduler.close()
     state.save()
     logger.info("Pool Manager 已关闭")
 
@@ -346,7 +338,7 @@ async def shutdown():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="WeChat Gateway Pool Manager")
+    parser = argparse.ArgumentParser(description="WeChat Gateway Pool Manager (Docker)")
     parser.add_argument("--config", default=os.path.expanduser("~/.hermes/wechat-pool/config.yaml"),
                         help="配置文件路径")
     parser.add_argument("--total", type=int, default=None, help="槽位总数")
@@ -378,7 +370,7 @@ def main():
     host = args.host or config.get("frontend", {}).get("host", "0.0.0.0")
     port = args.port or config.get("frontend", {}).get("api_port", 8765)
 
-    logger.info("启动 Pool Manager v2: host=%s port=%d", host, port)
+    logger.info("启动 Pool Manager v3 (Docker 模式): host=%s port=%d", host, port)
 
     uvicorn.run(app, host=host, port=port,
                 log_level=config.get("logging", {}).get("level", "info").lower())

@@ -1,0 +1,16 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# 安装依赖（含 Docker Python SDK）
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt docker
+
+# 复制源码
+COPY pool_manager/ /app/pool_manager/
+COPY static/ /app/static/
+COPY config.yaml /app/config.yaml
+
+EXPOSE 8765
+
+CMD ["python", "-m", "pool_manager", "--config", "/app/config.yaml"]

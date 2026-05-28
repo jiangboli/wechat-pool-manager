@@ -1,18 +1,17 @@
 #!/bin/bash
 #
-# setup.sh — WeChat Gateway Pool Manager 一键部署脚本
+# setup.sh — WeChat Gateway Pool Manager 一键部署脚本（Docker 版 v3）
 #
-# 架构 v2：
-# - 每个微信用户对应一个独立 Linux 用户（文件系统隔离）
-# - API key 通过 LLM Proxy（内嵌在 pool manager 中）管理
-# - 所有 LLM 请求转发到 proxy → 注入 key → 发到真实 API
-# - wx 用户 config.yaml 的 base_url 指向 localhost:8765/v1
-# - 不设工具集限制（全权限放开）
+# 架构 v3（Docker 容器化）：
+# - 每个微信用户一个 Docker 容器
+# - Pool Manager 也在 Docker 中运行
+# - LLM Proxy 内嵌在 Pool Manager 中，负责负载均衡
+# - 数据目录: /home/data/{尾数}/{profile}/.hermes/
 #
 # 用法:
-#   bash setup.sh                          # 默认 100 个槽位
-#   bash setup.sh --total 30 --hot-pool 3  # 自定义
-#   bash setup.sh --help                   # 看全部参数
+#   bash setup.sh                                 # 默认 100 个槽位
+#   bash setup.sh --total 30 --hot-pool 3
+#   bash setup.sh --help
 #
 
 set -euo pipefail
@@ -40,7 +39,7 @@ while [[ $# -gt 0 ]]; do
       echo "选项:"
       echo "  --total NUM    总槽位数（默认 100）"
       echo "  --hot-pool NUM 热池常驻槽位数（默认 5）"
-      echo "  --max-bound NUM 最大同时运行 gateway 数（默认 80）"
+      echo "  --max-bound NUM 最大同时运行容器数（默认 80）"
       echo "  --port NUM     API 端口（默认 8765）"
       echo "  --prefix STR   命名前缀（默认 weixin-）"
       echo "  --host STR     监听地址（默认 0.0.0.0）"
@@ -54,7 +53,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo "══════════════════════════════════════════════════"
-echo "   WeChat Gateway Pool Manager v2 — 部署"
+echo "   WeChat Gateway Pool Manager v3 (Docker)"
 echo "══════════════════════════════════════════════════"
 echo ""
 echo "配置:"
@@ -65,93 +64,28 @@ echo "  port:           $PORT"
 echo "  prefix:         $PREFIX"
 echo ""
 
-# ── 检查 Hermes ──────────────────────────────────────────────────────────
-if ! command -v hermes &>/dev/null; then
-  echo "[1/8] 📦 Hermes 未找到，开始安装..."
-  curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
-else
-  echo "[1/8] 📦 Hermes 已安装"
+# ── 检查 Docker ──────────────────────────────────────────────────────────
+echo "[1/5] 🐳 检查 Docker..."
+if ! command -v docker &>/dev/null; then
+  echo "  Docker 未安装！请先安装 Docker:"
+  echo "  curl -fsSL https://get.docker.com | bash"
+  exit 1
 fi
+echo "  Docker $(docker --version)"
 
-# ── 共享 Venv 安装（非 editable，wx 用户可直接 import）───────────────────
-echo "[2/8] 🔧 安装共享 Hermes venv..."
-SHARED_VENV="/opt/hermes/venv"
-SHARED_SRC="/opt/hermes/hermes-agent"
-
-if [ ! -d "$SHARED_VENV" ] || [ ! -d "$SHARED_SRC" ]; then
-  sudo mkdir -p /opt/hermes
-  sudo chown -R "$USER:$USER" /opt/hermes
-
-  # 复制 hermes 源码到共享位置
-  echo "  复制 hermes-agent 源码..."
-  cp -a "$HOME/.hermes/hermes-agent" "$SHARED_SRC"
-
-  # 安装到共享 venv（非 editable）
-  echo "  安装到共享 venv..."
-  cd "$SHARED_SRC"
-  uv pip install --python "$HOME/.hermes/hermes-agent/venv/bin/python" \
-    --python "$SHARED_VENV" . 2>&1 || {
-    # fallback: 直接创建 venv
-    echo "  尝试直接创建 venv..."
-    "$HOME/.hermes/hermes-agent/venv/bin/python" -m venv "$SHARED_VENV"
-    "$SHARED_VENV/bin/pip" install . 2>&1 || true
-  }
-  cd -
-
-  # 清理旧的 editable pth（如果有）
-  rm -f "$SHARED_VENV/lib/python3.11/site-packages/__editable__"*.pth
-  rm -f "$SHARED_VENV/lib/python3.11/site-packages/__editable__"*.py
-
-  echo "  共享 venv 安装完成"
-else
-  echo "  共享 venv 已存在，跳过"
-fi
-
-# ── 安装 Python 依赖 ─────────────────────────────────────────────────────
-echo "[3/8] 📦 安装 Python 依赖..."
-HERMES_VENV="$HOME/.hermes/hermes-agent/venv"
+# ── 复制配置文件 ──────────────────────────────────────────────────────────
+echo "[2/5] 📁 准备配置文件..."
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-install_deps() {
-  if [ -f "$HERMES_VENV/bin/pip" ]; then
-    echo "  使用 Hermes venv pip..."
-    "$HERMES_VENV/bin/pip" install -r "$PROJECT_DIR/requirements.txt" -q && return 0
-  fi
-  if command -v uv &>/dev/null; then
-    if [ -d "$HERMES_VENV" ]; then
-      echo "  使用 uv (venv)..."
-      VIRTUAL_ENV="$HERMES_VENV" uv pip install -r "$PROJECT_DIR/requirements.txt" -q && return 0
-    fi
-    echo "  使用 uv (--system)..."
-    uv pip install --system -r "$PROJECT_DIR/requirements.txt" -q && return 0
-  fi
-  if command -v pip3 &>/dev/null; then
-    echo "  使用 pip3..."
-    pip3 install -r "$PROJECT_DIR/requirements.txt" -q && return 0
-  fi
-  echo "  ⚠️ 未找到 pip/uv，请手动安装: pip install -r $PROJECT_DIR/requirements.txt"
-  return 1
-}
-
-if [ -f "$PROJECT_DIR/requirements.txt" ]; then
-  install_deps
+# 创建数据目录基础结构
+if [ ! -d "/home/data" ]; then
+  echo "  创建 /home/data 目录..."
+  sudo mkdir -p /home/data
 fi
 
-# ── 创建目录结构 + 配置 ──────────────────────────────────────────────────
-echo "[4/8] 📁 创建目录结构..."
-mkdir -p "$HOME/.hermes/wechat-pool/logs"
-mkdir -p "$HOME/.hermes/wechat-pool/pool_manager"
-mkdir -p "$HOME/.hermes/wechat-pool/static"
-
-# 复制代码
-cp -r "$PROJECT_DIR/pool_manager/"*".py" "$HOME/.hermes/wechat-pool/pool_manager/"
-cp -r "$PROJECT_DIR/static/"* "$HOME/.hermes/wechat-pool/static/" 2>/dev/null || true
-
-# 生成配置文件
-cat > "$HOME/.hermes/wechat-pool/config.yaml" << CONFIGEOF
-# WeChat Gateway Pool Manager v2 Configuration
-# API key 通过 proxy 管理，不写入用户文件
-
+# 生成 config.yaml（Docker 版）
+cat > "$PROJECT_DIR/config.yaml" << CONFIGEOF
+# WeChat Gateway Pool Manager v3 — Docker 模式
 pool:
   total_profiles: $TOTAL
   hot_pool_size: $HOT_POOL
@@ -159,12 +93,23 @@ pool:
   profile_prefix: "$PREFIX"
   max_qr_refresh: 3
 
-gateway:
-  idle_timeout_minutes: 1440
-  restart_on_crash: true
-  max_restart_attempts: 3
-  restart_delay_seconds: 10
-  health_check_interval: 60
+docker:
+  image: "hermes-bot:latest"
+  network: "hermes-pool-net"
+  data_root: "/home/data/"
+  max_containers: $MAX_BOUND
+  container_defaults:
+    memory_limit: "256m"
+    memory_reservation: "128m"
+    cpu_shares: 256
+    cpu_quota: 50000
+
+proxy:
+  default_provider: "deepseek"
+  fallback_providers: ["alibaba"]
+  circuit_breaker:
+    max_errors: 5
+    recovery_window: 60
 
 frontend:
   api_port: $PORT
@@ -174,7 +119,7 @@ frontend:
 
 logging:
   level: INFO
-  dir: "$HOME/.hermes/wechat-pool/logs/"
+  dir: "/app/logs/"
   retain_days: 7
   stats_window_hours: 168
 
@@ -183,117 +128,59 @@ ilink:
   qr_timeout_seconds: 480
   qr_poll_interval: 1
 CONFIGEOF
-echo "  目录结构 + 配置文件创建完成"
+echo "  config.yaml 已生成"
 
-# ── 复制并安装 systemd 服务 ─────────────────────────────────────────────
-echo "[5/8] ⚙️ 部署 systemd 服务..."
-SYSTEMD_DIR="$HOME/.config/systemd/user"
-mkdir -p "$SYSTEMD_DIR"
+# ── 构建 Docker 镜像 ──────────────────────────────────────────────────────
+echo "[3/5] 🔨 构建 Docker 镜像..."
 
-# Pool Manager 以 user service 运行（需要读 dosh 的 auth.json）
-cat > "$SYSTEMD_DIR/hermes-pool.service" << SERVICEEOF
-[Unit]
-Description=Hermes WeChat Gateway Pool Manager v2
-After=network-online.target
-Wants=network-online.target
-StartLimitIntervalSec=0
+echo "  构建 hermes-bot（微信用户容器镜像）..."
+docker build -f "$PROJECT_DIR/Dockerfile.bot" -t hermes-bot:latest "$PROJECT_DIR" 2>&1 | tail -3
 
-[Service]
-Type=simple
-ExecStart=%h/.hermes/hermes-agent/venv/bin/python \
-  -c "import sys; sys.path.insert(0, '%h/.hermes/wechat-pool/'); from pool_manager.service import main; main()" \
-  --config %h/.hermes/wechat-pool/config.yaml
-WorkingDirectory=%h/.hermes/wechat-pool/
-Environment="PATH=%h/.hermes/hermes-agent/venv/bin:%h/.hermes/node/bin:%h/.local/bin:%h/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-Environment="VIRTUAL_ENV=%h/.hermes/hermes-agent/venv"
-Restart=on-failure
-RestartSec=10
-KillMode=mixed
-KillSignal=SIGTERM
-TimeoutStopSec=90
-StandardOutput=journal
-StandardError=journal
+echo "  构建 pool-manager（管理服务镜像）..."
+docker build -f "$PROJECT_DIR/Dockerfile.pool" -t pool-manager:latest "$PROJECT_DIR" 2>&1 | tail -3
 
-[Install]
-WantedBy=default.target
-SERVICEEOF
+# ── 创建 Docker 网络 ──────────────────────────────────────────────────────
+echo "[4/5] 🌐 创建 Docker 网络..."
+docker network create hermes-pool-net 2>/dev/null || echo "  网络已存在"
 
-# Gateway 服务模板（每个 Linux 用户一个系统级服务）
-# 需要 root 权限写入 /etc/systemd/system/
-if [ -f "$PROJECT_DIR/systemd/hermes-gateway@.service" ]; then
-  sudo cp "$PROJECT_DIR/systemd/hermes-gateway@.service" /etc/systemd/system/
-  sudo systemctl daemon-reload
-fi
-echo "  systemd 配置已加载"
+# ── 启动 Pool Manager ──────────────────────────────────────────────────────
+echo "[5/5] 🚀 启动 Pool Manager (Docker)..."
 
-# ── 创建 Linux 用户 ──────────────────────────────────────────────────────
-echo "[6/8] 👤 创建 Linux 用户..."
-python3 "$PROJECT_DIR/scripts/create_profiles.py" \
-  --count "$TOTAL" --prefix "wx"
+# 停止旧容器（如果存在）
+docker stop pool-manager 2>/dev/null || true
+docker rm pool-manager 2>/dev/null || true
 
-# ── 添加 sudoers 规则 ────────────────────────────────────────────────────
-echo "[7/8] 🔒 配置 sudoers..."
-SUDOERS_FILE="/etc/sudoers.d/hermes-pool"
-sudo tee "$SUDOERS_FILE" > /dev/null << SUDOERSEOF
-# Hermes Pool Manager — passwordless sudo for gateway management
-dosh ALL=(ALL) NOPASSWD: /usr/bin/systemctl
-dosh ALL=(ALL) NOPASSWD: /usr/sbin/useradd
-dosh ALL=(ALL) NOPASSWD: /usr/sbin/userdel
-dosh ALL=(ALL) NOPASSWD: /usr/bin/mkdir
-dosh ALL=(ALL) NOPASSWD: /usr/bin/chown
-dosh ALL=(ALL) NOPASSWD: /usr/bin/chmod
-dosh ALL=(ALL) NOPASSWD: /usr/bin/cp
-dosh ALL=(ALL) NOPASSWD: /usr/bin/rm
-dosh ALL=(ALL) NOPASSWD: /usr/bin/cat
-dosh ALL=(ALL) NOPASSWD: /usr/bin/ln
-dosh ALL=(ALL) NOPASSWD: /usr/bin/id
-SUDOERSEOF
-sudo chmod 440 "$SUDOERS_FILE"
-echo "  sudoers 已配置"
-
-# ── 启动 Pool Manager ────────────────────────────────────────────────────
-echo "[8/8] 🚀 启动 Pool Manager..."
-
-systemctl --user enable hermes-pool 2>&1 || echo "  ⚠️ enable 失败"
-
-if command -v loginctl &>/dev/null; then
-  if loginctl show-user "$USER" 2>/dev/null | grep -q "Linger=no"; then
-    echo "  🔄 启用 linger..."
-    sudo loginctl enable-linger "$USER" 2>/dev/null || echo "  ⚠️ 需要手动: sudo loginctl enable-linger $USER"
-  fi
-fi
-
-systemctl --user restart hermes-pool
-
-# ── 权限收紧 ──────────────────────────────────────────────────────────────
-echo "🔐 权限收紧..."
-# 共享源码目录：仅 dosh 组可访问
-sudo chmod -R o-rwx /opt/hermes/hermes-agent/ 2>/dev/null || true
-# 所有共享文件去掉 world-write
-sudo chmod -R o-w /opt/hermes/ 2>/dev/null || true
-echo "  权限收紧完成"
+# 启动新的 pool-manager
+docker run -d \
+  --name pool-manager \
+  --network hermes-pool-net \
+  -p "$HOST:$PORT:8765" \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  -v /home/data:/home/data \
+  -v "$PROJECT_DIR/config.yaml:/app/config.yaml:ro" \
+  --restart unless-stopped \
+  pool-manager:latest
 
 echo ""
 echo "══════════════════════════════════════════════════"
 echo "   ✅ 部署完成！"
 echo ""
 echo "   Pool Manager:  http://$HOST:$PORT"
-echo "   LLM Proxy:     http://$HOST:$PORT/v1 (自动注入 API key)"
+echo "   LLM Proxy:     http://$HOST:$PORT/v1"
 echo "   前端页面:      http://$HOST:$PORT"
 echo "   健康检查:      http://$HOST:$PORT/health"
-echo "   自启动:        ✅ 已设置"
 echo ""
 echo "   管理命令:"
-echo "     systemctl --user status hermes-pool     # 查看状态"
-echo "     journalctl --user -u hermes-pool -f     # 查看日志"
-echo "     curl -X POST http://$HOST:$PORT/api/v1/pool/sync-models  # 同步模型"
+echo "     docker logs -f pool-manager          # 查看管理日志"
+echo "     docker ps --filter label=managed_by=pool-manager  # 查看用户容器"
+echo "     curl http://$HOST:$PORT/health       # 健康检查"
 echo ""
-echo "   ⚠️ 首次使用前需配置凭证池:"
-echo "     hermes auth add deepseek --api-key \"sk-xxx-1\""
-echo "     hermes auth add deepseek --api-key \"sk-xxx-2\""
-echo "     # ... 添加所有 25 个 key"
+echo "   ⚠️ 首次使用前需配置 LLM API Key:"
+echo "     curl -X POST http://$HOST:$PORT/api/v1/proxy/keys \\"
+echo "       -H 'Content-Type: application/json' \\"
+echo "       -d '{\"provider\":\"deepseek\",\"key\":\"sk-xxx-1\",\"label\":\"key-1\"}'"
 echo ""
-echo "   ⚠️ Gateway 模板未配置时，需手动安装:"
-echo "     sudo cp systemd/hermes-gateway@.service /etc/systemd/system/"
-echo "     sudo systemctl daemon-reload"
+echo "   更多管理:"
+echo "     curl http://$HOST:$PORT/api/v1/proxy/status    # 查看 proxy 状态"
+echo "     curl http://$HOST:$PORT/api/v1/pool/stats      # 池统计"
 echo "══════════════════════════════════════════════════"
