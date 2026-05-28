@@ -157,16 +157,24 @@ async def proxy_chat_completions(request: Request):
             headers[h] = request.headers[h]
     
     stream = body.get("stream", False)
+    client = None
     
     try:
-        async with httpx.AsyncClient(timeout=300) as client:
-            if stream:
-                return await _proxy_stream(client, target_url, body, headers)
-            else:
-                return await _proxy_sync(client, target_url, body, headers)
+        client = httpx.AsyncClient(timeout=300)
+        if stream:
+            return await _proxy_stream(client, target_url, body, headers)
+        else:
+            result = await _proxy_sync(client, target_url, body, headers)
+            await client.aclose()
+            return result
     except Exception as e:
         logger.error("[proxy] 转发失败: model=%s provider=%s error=%s",
                       model, provider, e)
+        if client:
+            try:
+                await client.aclose()
+            except Exception:
+                pass
         return Response(
             content=json.dumps({"error": str(e)}),
             status_code=502,
@@ -185,6 +193,8 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n".encode()
             yield DONE_MARKER
+        finally:
+            await client.aclose()
     
     return StreamingResponse(
         generate(),
