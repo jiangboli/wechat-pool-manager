@@ -147,17 +147,17 @@ def setup_linux_profile(profile: str, credentials: dict, api_env: dict = None) -
     }
 
     if api_env:
-        # 如果有模型配置，写入
+        # 写入模型配置（credential pool 提供 api_key，不需要在此处写入）
         provider = api_env.get("PROVIDER", "")
         model = api_env.get("MODEL", "")
         base_url = api_env.get("BASE_URL", "")
-        api_key = api_env.get("API_KEY", "")
-        if provider and api_key:
+        if provider:
             config["model"] = {
                 "provider": provider,
                 "default": model or "deepseek-v4-flash",
             }
-            # api_key 通过 .env 注入，不在 config.yaml 中明文存储
+            if base_url:
+                config["model"]["base_url"] = base_url
 
     ok, msg = gm.write_hermes_config(luser, config)
     if not ok:
