@@ -54,10 +54,15 @@ def init_proxy(proxy_config: dict = None):
         logger.info("  %s: %d keys", provider, len(keys))
 
 
+def _auth_json_path() -> str:
+    """返回持久化 auth.json 路径（volume 挂载的目录，重启不丢）。"""
+    return "/home/data/pool-manager/auth.json"
+
+
 def _load_from_auth_json():
     """从 auth.json 加载初始凭证。"""
     try:
-        auth_path = os.path.expanduser("~/.hermes/auth.json")
+        auth_path = _auth_json_path()
         if not os.path.exists(auth_path):
             logger.warning("auth.json 不存在: %s", auth_path)
             return
@@ -72,9 +77,9 @@ def _load_from_auth_json():
 
 
 def _save_credential_pool():
-    """将当前凭证池写入 auth.json。"""
+    """将当前凭证池写入 auth.json（volume 挂载路径，持久化）。"""
     try:
-        auth_path = os.path.expanduser("~/.hermes/auth.json")
+        auth_path = _auth_json_path()
         os.makedirs(os.path.dirname(auth_path), exist_ok=True)
         pool = {}
         for provider, keys in _credential_pool.items():
@@ -102,7 +107,7 @@ def _add_key_internal(provider: str, key_info: dict) -> str:
     key_info["_error_count"] = 0
     _credential_pool[provider].append(key_info)
     logger.info("[proxy] 添加 key: provider=%s label=%s id=%s", provider, key_info.get("label", ""), key_id)
-    _save_credential_pool()  # 自动持久化
+    _save_credential_pool()  # 自动持久化到 volume
     return key_id
 
 
