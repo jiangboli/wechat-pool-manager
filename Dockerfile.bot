@@ -1,0 +1,12 @@
+FROM python:3.11-slim
+
+# 安装 Hermes Agent
+RUN pip install --no-cache-dir hermes-agent
+
+# 创建运行用户
+RUN useradd -m hermes
+USER hermes
+WORKDIR /home/hermes
+
+# 默认 CMD（启动 Hermes Gateway）
+CMD ["hermes", "gateway", "run", "--replace"]

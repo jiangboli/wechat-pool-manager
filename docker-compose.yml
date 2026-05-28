@@ -1,0 +1,34 @@
+services:
+  # ── Pool Manager ──────────────────────────────────────────────
+  # 负责扫码绑定、Docker 调度、LLM 代理负载均衡
+  pool-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile.pool
+    image: pool-manager:latest
+    container_name: pool-manager
+    ports:
+      - "8765:8765"
+    volumes:
+      # Docker 套接字 — 让 pool manager 创建/管理其他容器
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # 数据目录 — 持久化微信凭证和 Hermes 配置
+      - /home/data:/home/data
+      # 配置挂载（方便外部修改 config.yaml）
+      - ./config.yaml:/app/config.yaml:ro
+    networks:
+      - hermes-pool-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8765/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+# ── 共享网络 ────────────────────────────────────────────────────
+# hermes-wxNNN 容器也加入此网络，通过 DNS 名 "pool-manager" 访问 LLM Proxy
+networks:
+  hermes-pool-net:
+    name: hermes-pool-net
+    driver: bridge

@@ -17,6 +17,9 @@ import sys
 import time
 from typing import Callable, Dict, Optional
 
+from . import docker_scheduler as ds
+from . import gateway_manager as gm
+
 logger = logging.getLogger("pool_manager.hot_pool")
 
 # WeChat iLink API 端点
@@ -163,6 +166,7 @@ class HotPool:
         self.state = state_ref
         self.pm = profile_manager_ref
         self.gm = gateway_manager_ref
+        self._scheduler = gm._scheduler  # 全局 DockerScheduler 实例
 
         self.pool_size = config.get("pool", {}).get("hot_pool_size", 5)
         self.prefix = config.get("pool", {}).get("profile_prefix", "weixin-")
@@ -207,13 +211,19 @@ class HotPool:
                 success = await slot.run(self._on_confirmed)
                 if success:
                     self.state.mark_bound(profile, slot.user_id)
-                    logger.info("[%s] 绑定完成，启动 gateway", profile)
-                    ok, msg = self.gm.start(profile)
+                    logger.info("[%s] 绑定完成，创建 Docker 容器", profile)
+                    # 创建并启动 Docker 容器
+                    ok = self._scheduler.create_container(profile, {
+                        "account_id": slot.account_id,
+                        "token": slot.token,
+                        "base_url": slot.bot_base_url or "",
+                        "user_id": slot.user_id or "",
+                    }) if self._scheduler else False
                     if ok:
-                        logger.info("[%s] gateway 已启动", profile)
+                        logger.info("[%s] Docker 容器已创建并启动", profile)
                     else:
-                        logger.error("[%s] gateway 启动失败: %s", profile, msg)
-                        self.state.mark_unhealthy(profile, msg)
+                        logger.error("[%s] Docker 容器创建失败", profile)
+                        self.state.mark_unhealthy(profile, "容器创建失败")
                 else:
                     if slot.status == "expired":
                         self.state.mark_qr_failed(profile)
@@ -252,22 +262,22 @@ class HotPool:
 
         user_id = credentials["user_id"]
 
-        # 去重：同一个微信用户二次扫码 → 复用已有 Linux 用户
-        existing_luser = self.state.get_linux_user_by_user_id(user_id)
-        if existing_luser:
-            logger.info("[%s] 用户 %s 已存在（user_id=%s），更新凭证 + 重启 gateway",
-                        profile, existing_luser, user_id)
-            ok = self.pm.update_credentials(existing_luser, credentials)
+        # 去重：同一个微信用户二次扫码 → 复用已有 Docker 容器
+        existing_profile = self.state.get_docker_user_by_user_id(user_id)
+        if existing_profile:
+            logger.info("[%s] 用户 %s 已存在（user_id=%s），更新凭证 + 重启容器",
+                        profile, existing_profile, user_id)
+            ok = self.pm.update_credentials(existing_profile, credentials)
             if ok:
                 self.state.set_status(profile, "bound_healthy",
                                       bound_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
                                       user_id=user_id)
-                self.gm.restart(existing_luser)
+                self._scheduler.restart_container(existing_profile)
             else:
                 logger.error("[%s] 更新凭证失败", profile)
             return
 
-        # 新用户：创建 Linux 用户 + 写入配置
+        # 新用户：写入凭证（容器由 _run_slot 创建）
         ok = self.pm.setup_linux_profile(profile, credentials)
         if ok:
             logger.info("[%s] Linux 用户配置完成", profile)

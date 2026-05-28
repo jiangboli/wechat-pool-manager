@@ -6,14 +6,14 @@ import time
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 
-# 状态文件路径
+# 状态文件路径（Pool Manager Docker 化后，挂载到 /home/pool-data/）
 STATE_FILE = os.path.expanduser("~/.hermes/wechat-pool/pool_state.json")
 
 # Profile 状态枚举
 STATUS_AVAILABLE = "available"        # 已创建但从未入热池
 STATUS_IN_HOT_POOL = "in_hot_pool"   # 正在热池中轮询 QR
-STATUS_BOUND_HEALTHY = "bound_healthy"   # 已绑定，gateway 正常
-STATUS_BOUND_UNHEALTHY = "bound_unhealthy" # 已绑定但 gateway 异常
+STATUS_BOUND_HEALTHY = "bound_healthy"   # 已绑定，容器运行正常
+STATUS_BOUND_UNHEALTHY = "bound_unhealthy" # 已绑定但容器异常
 STATUS_BOUND_IDLE = "bound_idle"      # 已绑定但已因空闲被停
 STATUS_QR_FAILED = "qr_failed"       # QR 多次过期
 STATUS_EXPIRED = "expired"            # WeChat session 过期
@@ -132,12 +132,11 @@ class PoolState:
 
     # ── 微信用户去重 ──────────────────────────────────────────────────
 
-    def get_linux_user_by_user_id(self, user_id: str) -> Optional[str]:
-        """通过微信 user_id 查找已绑定的 Linux 用户名。"""
+    def get_docker_user_by_user_id(self, user_id: str) -> Optional[str]:
+        """通过微信 user_id 查找已绑定的 Docker 容器对应的 profile。"""
         for name, ps in self.profiles.items():
             if ps.get("user_id") == user_id and ps.get("status", "").startswith("bound"):
-                from .profile_manager import linux_username
-                return linux_username(name)
+                return name
         return None
 
     def record_binding(self, name: str, user_id: str):
