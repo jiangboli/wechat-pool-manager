@@ -261,11 +261,20 @@ class HotPool:
             "base_url": result.get("base_url", ""),
             "user_id": result.get("user_id", ""),
         }
-        # 从主配置读取 API Key 等环境变量
+        # 从主 Hermes config 读取模型配置（credential pool 处理 api_key）
+        import yaml
+        main_config_path = os.path.expanduser("~/.hermes/config.yaml")
+        try:
+            with open(main_config_path) as _f:
+                main_cfg = yaml.safe_load(_f)
+            model_cfg = main_cfg.get("model", {})
+        except Exception:
+            model_cfg = {}
+
         api_env = {
-            "PROVIDER": self.config.get("model", {}).get("provider", ""),
-            "MODEL": self.config.get("model", {}).get("default", ""),
-            "BASE_URL": self.config.get("model", {}).get("base_url", ""),
+            "PROVIDER": model_cfg.get("provider", ""),
+            "MODEL": model_cfg.get("default", ""),
+            "BASE_URL": model_cfg.get("base_url", ""),
             "API_KEY": os.environ.get("DEEPSEEK_API_KEY", ""),
         }
         ok = self.pm.setup_linux_profile(profile, credentials, api_env)
