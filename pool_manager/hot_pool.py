@@ -1,10 +1,13 @@
 """热池引擎——维护常驻 QR 扫码槽位。
 
 核心逻辑：
-1. 保持 N 个未绑定 profile 同时运行 qr_login() 轮询
+1. 保持 N 个未绑定 Linux 用户同时运行 qr_login() 轮询
 2. 二维码过期自动刷新（最多 3 次）
-3. 检测到确认绑定 → 回调通知调用方
+3. 检测到确认绑定 → 回调通知调用方（创建 Linux 用户 + 写入凭证 + 启动 gateway）
 4. 补充新槽位
+
+去重：同一微信用户二次扫码 → 复用已有 Linux 用户，不创建新用户。
+安全：不传递、不写入任何 API key。
 """
 
 import asyncio
@@ -49,7 +52,6 @@ class HotPoolSlot:
         self._running = False
 
     async def _api_get(self, url: str, timeout_ms: int = 15000) -> Optional[dict]:
-        """调用 iLink API。"""
         import aiohttp
         import json as _json
         try:
@@ -63,9 +65,7 @@ class HotPoolSlot:
         return None
 
     async def run(self, on_confirmed: Callable) -> bool:
-        """运行 QR 登录流程。返回 True=绑定成功, False=失败。"""
         import aiohttp
-
         self._running = True
         self._consecutive_failures = 0
         conn = aiohttp.TCPConnector(ssl=False)
@@ -85,8 +85,6 @@ class HotPoolSlot:
                         logger.warning("[%s] 连续 %d 次获取二维码失败，放弃当前槽位",
                                        self.profile, self._consecutive_failures)
                         return False
-                    logger.warning("[%s] 获取二维码失败（第%d次），1秒后重试",
-                                   self.profile, self._consecutive_failures)
                     await asyncio.sleep(1)
                     continue
 
@@ -95,14 +93,12 @@ class HotPoolSlot:
                 self.qr_url = str(qr_resp.get("qrcode_img_content") or "")
                 self.refreshed_at = time.strftime("%H:%M:%S")
                 if not self.qr_value:
-                    logger.warning("[%s] 二维码响应缺少 qrcode 字段", self.profile)
                     await asyncio.sleep(1)
                     continue
 
                 self.status = "waiting"
                 logger.info("[%s] 二维码已就绪", self.profile)
 
-                # 轮询扫码状态
                 while self._running and asyncio.get_event_loop().time() < deadline:
                     status_resp = await self._api_get(
                         f"{self.base_url}/{EP_GET_QR_STATUS}?qrcode={self.qr_value}",
@@ -110,8 +106,7 @@ class HotPoolSlot:
                     )
                     if not status_resp:
                         await asyncio.sleep(
-                            self.config.get("ilink", {}).get("qr_poll_interval", 1)
-                        )
+                            self.config.get("ilink", {}).get("qr_poll_interval", 1))
                         continue
 
                     status = str(status_resp.get("status") or "wait")
@@ -124,17 +119,13 @@ class HotPoolSlot:
                         host = str(status_resp.get("redirect_host") or "")
                         if host:
                             self.base_url = f"https://{host}"
-                            logger.info("[%s] 重定向到 %s", self.profile, self.base_url)
                     elif status == "expired":
                         self.refresh_count += 1
                         if self.refresh_count > self.max_refresh:
-                            logger.warning("[%s] 二维码多次过期（%d次）",
-                                           self.profile, self.refresh_count)
+                            logger.warning("[%s] 二维码多次过期（%d次）", self.profile, self.refresh_count)
                             self.status = "expired"
                             return False
-                        logger.info("[%s] 二维码过期，刷新（%d/%d）",
-                                    self.profile, self.refresh_count, self.max_refresh)
-                        break  # 重新获取 QR
+                        break
                     elif status == "confirmed":
                         self.account_id = str(status_resp.get("ilink_bot_id") or "")
                         self.token = str(status_resp.get("bot_token") or "")
@@ -145,8 +136,7 @@ class HotPoolSlot:
                             return False
 
                         self.status = "confirmed"
-                        logger.info("[%s] 绑定成功！account_id=%s",
-                                    self.profile, self.account_id)
+                        logger.info("[%s] 绑定成功！user_id=%s", self.profile, self.user_id)
 
                         await on_confirmed({
                             "profile": self.profile,
@@ -158,13 +148,10 @@ class HotPoolSlot:
                         return True
 
                     await asyncio.sleep(
-                        self.config.get("ilink", {}).get("qr_poll_interval", 1)
-                    )
-
+                        self.config.get("ilink", {}).get("qr_poll_interval", 1))
         return False
 
     def stop(self):
-        """停止槽位。"""
         self._running = False
 
 
@@ -184,7 +171,6 @@ class HotPool:
         self._running = False
 
     async def start(self):
-        """启动热池主循环。"""
         self._running = True
         logger.info("热池启动，目标槽位数: %d", self.pool_size)
         while self._running:
@@ -193,7 +179,6 @@ class HotPool:
         logger.info("热池已停止")
 
     async def stop(self):
-        """停止热池。"""
         self._running = False
         for name, task in self._tasks.items():
             task.cancel()
@@ -203,8 +188,6 @@ class HotPool:
         self.slots.clear()
 
     async def _tick(self):
-        """每 tick 补充槽位。"""
-        # 注意：_run_slot 的 finally 块已负责清理，这里只负责计数和补充
         active = len(self.slots)
         needed = self.pool_size - active
         if needed > 0:
@@ -214,7 +197,6 @@ class HotPool:
                     self._start_slot(profile)
 
     def _start_slot(self, profile: str):
-        """启动一个 QR 槽位。"""
         slot = HotPoolSlot(profile, self.config)
         self.slots[profile] = slot
         self.state.mark_hot_pool(profile, qr_url="获取中...")
@@ -253,7 +235,13 @@ class HotPool:
         self._tasks[profile] = task
 
     async def _on_confirmed(self, result: dict):
-        """QR 确认回调——创建 Linux 用户 + 配置 Hermes 环境 + 写入凭证。"""
+        """QR 确认回调——创建/重用 Linux 用户 + 写入凭证 + 启动 gateway。
+
+        安全设计：
+        - .env 只写微信凭证（account_id, token），不写任何 API key
+        - config.yaml 不写 api_key
+        - 模型配置（provider, base_url）指向 proxy 地址
+        """
         profile = result["profile"]
         credentials = {
             "account_id": result["account_id"],
@@ -261,23 +249,26 @@ class HotPool:
             "base_url": result.get("base_url", ""),
             "user_id": result.get("user_id", ""),
         }
-        # 从主 Hermes config 读取模型配置（credential pool 处理 api_key）
-        import yaml
-        main_config_path = os.path.expanduser("~/.hermes/config.yaml")
-        try:
-            with open(main_config_path) as _f:
-                main_cfg = yaml.safe_load(_f)
-            model_cfg = main_cfg.get("model", {})
-        except Exception:
-            model_cfg = {}
 
-        api_env = {
-            "PROVIDER": model_cfg.get("provider", ""),
-            "MODEL": model_cfg.get("default", ""),
-            "BASE_URL": model_cfg.get("base_url", ""),
-            "API_KEY": os.environ.get("DEEPSEEK_API_KEY", ""),
-        }
-        ok = self.pm.setup_linux_profile(profile, credentials, api_env)
+        user_id = credentials["user_id"]
+
+        # 去重：同一个微信用户二次扫码 → 复用已有 Linux 用户
+        existing_luser = self.state.get_linux_user_by_user_id(user_id)
+        if existing_luser:
+            logger.info("[%s] 用户 %s 已存在（user_id=%s），更新凭证 + 重启 gateway",
+                        profile, existing_luser, user_id)
+            ok = self.pm.update_credentials(existing_luser, credentials)
+            if ok:
+                self.state.set_status(profile, "bound_healthy",
+                                      bound_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
+                                      user_id=user_id)
+                self.gm.restart(existing_luser)
+            else:
+                logger.error("[%s] 更新凭证失败", profile)
+            return
+
+        # 新用户：创建 Linux 用户 + 写入配置
+        ok = self.pm.setup_linux_profile(profile, credentials)
         if ok:
             logger.info("[%s] Linux 用户配置完成", profile)
         else:
