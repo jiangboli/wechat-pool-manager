@@ -253,19 +253,26 @@ class HotPool:
         self._tasks[profile] = task
 
     async def _on_confirmed(self, result: dict):
-        """QR 确认回调——保存凭证 + home channel。"""
+        """QR 确认回调——创建 Linux 用户 + 配置 Hermes 环境 + 写入凭证。"""
         profile = result["profile"]
-        ok = self.pm.set_weixin_credentials(
-            profile,
-            account_id=result["account_id"],
-            token=result["token"],
-            base_url=result.get("base_url", ""),
-            user_id=result.get("user_id", ""),
-        )
+        credentials = {
+            "account_id": result["account_id"],
+            "token": result["token"],
+            "base_url": result.get("base_url", ""),
+            "user_id": result.get("user_id", ""),
+        }
+        # 从主配置读取 API Key 等环境变量
+        api_env = {
+            "PROVIDER": self.config.get("model", {}).get("provider", ""),
+            "MODEL": self.config.get("model", {}).get("default", ""),
+            "BASE_URL": self.config.get("model", {}).get("base_url", ""),
+            "API_KEY": os.environ.get("DEEPSEEK_API_KEY", ""),
+        }
+        ok = self.pm.setup_linux_profile(profile, credentials, api_env)
         if ok:
-            logger.info("[%s] 凭证已写入 .env", profile)
+            logger.info("[%s] Linux 用户配置完成", profile)
         else:
-            logger.error("[%s] 写入凭证失败！", profile)
+            logger.error("[%s] Linux 用户配置失败！", profile)
 
     def get_slot_qr(self, profile: str) -> Optional[str]:
         slot = self.slots.get(profile)

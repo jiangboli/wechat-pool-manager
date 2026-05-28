@@ -71,41 +71,104 @@ def profile_exists(name: str) -> bool:
     return os.path.isdir(get_profile_dir(name))
 
 
-def set_weixin_credentials(profile: str, account_id: str, token: str,
-                           base_url: str = "", user_id: str = "") -> bool:
-    """向 profile 写入 WeChat 凭证和配置（含权限限制 + home channel）。"""
-    profile_dir = get_profile_dir(profile)
+def linux_username(profile: str) -> str:
+    """从 profile 名 (weixin-001) 推导 Linux 用户名 (wx001)。"""
+    return profile.replace("weixin-", "wx")
 
-    # 1. 更新 .env
-    env_path = os.path.join(profile_dir, ".env")
-    try:
-        with open(env_path, "r") as f:
-            lines = f.readlines()
-    except Exception:
-        lines = []
-    keep = {"WEIXIN_ACCOUNT_ID=", "WEIXIN_TOKEN=", "WEIXIN_BASE_URL=",
-            "WEIXIN_ALLOW_ALL_USERS=", "WEIXIN_HOME_CHANNEL="}
-    lines = [l for l in lines if not any(l.startswith(k) for k in keep)]
-    lines.append("")
-    lines.append("# WeChat credentials (auto-set by pool manager)")
-    lines.append("WEIXIN_ACCOUNT_ID=" + account_id)
-    lines.append("WEIXIN_TOKEN=" + token)
-    lines.append("WEIXIN_ALLOW_ALL_USERS=true")
-    if base_url:
-        lines.append("WEIXIN_BASE_URL=" + base_url)
-    if user_id:
-        lines.append("WEIXIN_HOME_CHANNEL=" + user_id)
-    with open(env_path, "w") as f:
-        for line in lines:
-            f.write(line + "\n")
 
-    # 2. 更新 config.yaml（含工具权限限制）
-    _write_weixin_config(profile_dir)
+def setup_linux_profile(profile: str, credentials: dict, api_env: dict = None) -> bool:
+    """在 Linux 用户的 home 下创建完整的 Hermes 配置。
+
+    流程：
+    1. 确保 Linux 用户存在
+    2. 创建 ~/.hermes/ 目录
+    3. 写入 .env（微信凭证 + API Keys）
+    4. 写入 config.yaml（平台配置 + 工具权限）
+    """
+    luser = linux_username(profile)
+    hermes_dir = f"/home/{luser}/.hermes"
+
+    # 1. 确保用户存在
+    from . import gateway_manager as gm
+    ok, msg = gm.create_linux_user(luser)
+    if not ok:
+        print(f"  [!] 创建 Linux 用户 {luser} 失败: {msg}", file=sys.stderr)
+        return False
+    print(f"  [OK] Linux 用户 {luser} 就绪")
+
+    # 2. 创建 .hermes/
+    ok, msg = gm.ensure_profile_home(luser)
+    if not ok:
+        print(f"  [!] 创建 .hermes 失败: {msg}", file=sys.stderr)
+        return False
+    print(f"  [OK] {hermes_dir} 已创建")
+
+    # 3. 写入 .env
+    env_vars = {
+        "WEIXIN_ACCOUNT_ID": credentials.get("account_id", ""),
+        "WEIXIN_TOKEN": credentials.get("token", ""),
+        "WEIXIN_ALLOW_ALL_USERS": "true",
+        "WEIXIN_BASE_URL": credentials.get("base_url", ""),
+        "WEIXIN_HOME_CHANNEL": credentials.get("user_id", ""),
+    }
+    # 合并 API Key 等全局环境变量
+    if api_env:
+        for k, v in api_env.items():
+            if v:
+                env_vars[k] = v
+
+    ok, msg = gm.write_hermes_env(luser, env_vars)
+    if not ok:
+        print(f"  [!] 写入 .env 失败: {msg}", file=sys.stderr)
+        return False
+    print(f"  [OK] .env 已写入")
+
+    # 4. 写入 config.yaml
+    config = {
+        "platforms": {
+            "weixin": {
+                "enabled": True,
+                "extra": {
+                    "dm_policy": "open",
+                    "group_policy": "disabled",
+                },
+            },
+        },
+        "platform_toolsets": {
+            "weixin": ["web", "clarify", "todo", "vision"],
+        },
+        "agent": {
+            "disabled_toolsets": [
+                "terminal", "file", "code_execution", "cronjob",
+                "delegation", "skills", "messaging", "browser",
+                "session_search", "memory",
+            ],
+        },
+    }
+
+    if api_env:
+        # 如果有模型配置，写入
+        provider = api_env.get("PROVIDER", "")
+        model = api_env.get("MODEL", "")
+        base_url = api_env.get("BASE_URL", "")
+        api_key = api_env.get("API_KEY", "")
+        if provider and api_key:
+            config["model"] = {
+                "provider": provider,
+                "default": model or "deepseek-v4-flash",
+            }
+            # api_key 通过 .env 注入，不在 config.yaml 中明文存储
+
+    ok, msg = gm.write_hermes_config(luser, config)
+    if not ok:
+        print(f"  [!] 写入 config.yaml 失败: {msg}", file=sys.stderr)
+        return False
+    print(f"  [OK] config.yaml 已写入")
 
     return True
 
 
-# ── 微信安全工具集配置 ──────────────────────────────────────────────────
+    # ── 微信安全工具集配置 ──────────────────────────────────────────────────
 
 _SAFE_TOOLSETS = [
     "web",              # 网络搜索
