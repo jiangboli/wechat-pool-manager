@@ -346,6 +346,20 @@
     color: var(--text-muted);
   }
 
+  /* Ticker — 滚动抢虾消息 */
+  .ticker {
+    margin: -6px 0 18px;
+    font-size: 12px;
+    color: var(--accent);
+    opacity: 0.7;
+    min-height: 18px;
+    animation: tickerFade 1.5s ease-in-out infinite alternate;
+  }
+  @keyframes tickerFade {
+    0% { opacity: 0.5; }
+    100% { opacity: 0.85; }
+  }
+
   /* Loading skeleton for QR */
   .qr-skeleton {
     width: 180px;
@@ -395,8 +409,13 @@
     <h1>Just Claw Do It</h1>
     <p class="subtitle">在微信里养一只属于自己的虾</p>
 
-    <!-- Prompt -->
-    <p class="prompt-text">📢 请及时领取您的虾苗</p>
+    <!-- Prompt / 抢虾消息 -->
+    <p class="prompt-text" id="promptText">📢 请及时领取您的虾苗</p>
+
+    <!-- 滚动消息 -->
+    <div class="ticker" id="ticker">
+      <span id="tickerText">👀 5个坑位正在等你...</span>
+    </div>
 
     <!-- QR Code -->
     <div class="qr-wrapper">
@@ -413,7 +432,6 @@
       <span class="dot pulse" id="statusDot"></span>
       <span id="statusText">准备中...</span>
     </div>
-    <div class="countdown" id="countdown"></div>
 
     <!-- Steps -->
     <div class="steps">
@@ -431,12 +449,6 @@
       </div>
     </div>
 
-    <!-- Refresh -->
-    <button class="refresh-btn" id="refreshBtn" onclick="refreshQR()">
-      <span class="icon">↻</span>
-      刷新二维码
-    </button>
-
     <!-- Stats -->
     <div class="stats" id="stats"></div>
   </div>
@@ -445,11 +457,18 @@
 <script>
 const API_BASE = '';
 let currentSlot = null;
-let qrTimer = null;
 let statusTimer = null;
-let imageRefreshTimer = null;
-let countdownValue = 50;
+let fetchRetryTimer = null;
 let lastQrUrl = '';
+let awaitingConfirmation = false;  // 是否在等待自己扫码的确认
+
+const TICKER_MSGS = [
+  '🔥 注意：坑位先到先得！',
+  '⚡ 已有 %d 只虾被领养',
+  '👀 %d 个坑位等待有缘人...',
+  '🎯 扫码要快，姿势要帅',
+  '🦞 别犹豫，扫就对了',
+];
 
 function showError(msg) {
   const qrBox = document.getElementById('qrBox');
@@ -470,18 +489,19 @@ function showLoading() {
 function showQR(url, slotId) {
   currentSlot = slotId;
   lastQrUrl = url;
+  awaitingConfirmation = false;
   const qrBox = document.getElementById('qrBox');
   qrBox.className = 'qr-box';
   qrBox.classList.add('pulsing');
   document.getElementById('qrContent').innerHTML =
     '<img src="/api/v1/pool/qr-image/' + slotId + '?t=' + Date.now() +
     '" alt="微信二维码" id="qrImg" onerror="this.onerror=null;showError(\'二维码加载失败\')">';
-  setStatus('等待扫码...', 'waiting');
-  document.getElementById('refreshBtn').disabled = false;
+  setStatus('📱 请用微信扫一扫', 'waiting');
+  startPollingStatus(slotId);
+  updateTicker();
 }
 
 function refreshSlotImage() {
-  // 同 slot 刷新图片（不换 slot_id），带缓存破坏
   if (!currentSlot) return;
   const img = document.getElementById('qrImg');
   if (img) {
@@ -490,7 +510,8 @@ function refreshSlotImage() {
 }
 
 function showScanned() {
-  setStatus('已扫码！请在手机上确认...', 'scanned');
+  awaitingConfirmation = true;
+  setStatus('📱 已扫码！请在手机上确认...', 'scanned');
 }
 
 function showSuccess() {
@@ -498,11 +519,26 @@ function showSuccess() {
   qrBox.className = 'qr-box success';
   qrBox.classList.remove('pulsing');
   document.getElementById('qrContent').innerHTML = '';
-  setStatus('绑定成功！你已领养了一只 do 大龙虾 ✨', 'success');
-  document.getElementById('refreshBtn').disabled = true;
-  if (qrTimer) clearInterval(qrTimer);
+  setStatus('🎉 你已成功领养了一只 do 大龙虾！', 'success');
   if (statusTimer) clearInterval(statusTimer);
-  if (imageRefreshTimer) clearInterval(imageRefreshTimer);
+  document.getElementById('tickerText').textContent = '🏆 领养成功！去微信找你的虾聊天吧';
+}
+
+function showSnatched() {
+  // 被抢了→自动换下一个
+  setStatus('😅 慢了一步，坑位已被抢走！换上新的...', 'error');
+  setTicker('⚡ 刚才有人抢走了一个坑位！');
+  if (statusTimer) clearInterval(statusTimer);
+  // 延迟一下再去获取新的，避免闪烁
+  setTimeout(fetchQR, 800);
+}
+
+function showExpired() {
+  // 过期了→自动换下一个
+  setStatus('⏳ 二维码已过期，正在换新...', 'error');
+  setTicker('🔄 二维码已刷新');
+  if (statusTimer) clearInterval(statusTimer);
+  setTimeout(fetchQR, 500);
 }
 
 function setStatus(text, type) {
@@ -514,36 +550,74 @@ function setStatus(text, type) {
   textEl.textContent = text;
 }
 
+function setTicker(msg) {
+  document.getElementById('tickerText').textContent = msg;
+}
+
+function updateTicker() {
+  let idx = Math.floor(Math.random() * TICKER_MSGS.length);
+  let msg = TICKER_MSGS[idx];
+  // bound count from stats
+  fetch(API_BASE + '/api/v1/pool/stats')
+    .then(r => r.json())
+    .then(data => {
+      msg = msg.replace('%d', data.bound || 0);
+      setTicker(msg);
+    })
+    .catch(() => {});
+}
+
 async function fetchQR() {
   try {
+    showLoading();
     const resp = await fetch(API_BASE + '/api/v1/pool/available');
     if (!resp.ok) {
       showError('暂无可用二维码，请稍后再试');
+      // 重试
+      if (fetchRetryTimer) clearTimeout(fetchRetryTimer);
+      fetchRetryTimer = setTimeout(fetchQR, 5000);
       return;
     }
     const data = await resp.json();
     showQR(data.qr_url, data.slot_id);
-    countdownValue = 50;
-    startPollingStatus(data.slot_id);
   } catch (e) {
-    showError('网络错误，请检查连接');
+    showError('网络错误，正在重试...');
+    if (fetchRetryTimer) clearTimeout(fetchRetryTimer);
+    fetchRetryTimer = setTimeout(fetchQR, 3000);
   }
 }
 
 async function pollStatus(slotId) {
   try {
     const resp = await fetch(API_BASE + '/api/v1/pool/status/' + slotId);
-    if (!resp.ok) return;
-    const data = await resp.json();
-    if (data.bound) { showSuccess(); return; }
-    if (data.qr_status === 'scaned') { showScanned(); return; }
-    // 检测二维码过期→自动重载同 slot 图片
-    if (data.qr_status === 'expired') {
-      setStatus('二维码已过期，正在刷新...', 'error');
-      setTimeout(refreshSlotImage, 500);
+    if (!resp.ok) {
+      // slot not found → 已被移除
+      if (resp.status === 404) { showSnatched(); return; }
       return;
     }
-    // 检测后端是否刷新了二维码（同 slot，新 qr_url）
+    const data = await resp.json();
+
+    // 如果是自己在等扫码确认，bound = 自己绑定成功
+    if (awaitingConfirmation && data.bound) { showSuccess(); return; }
+    // slot 不在热池了但 bound=true → 自己绑成功了（slot已被移除）
+    if (awaitingConfirmation && data.qr_status === 'not_in_pool' && data.bound) {
+      showSuccess();
+      return;
+    }
+
+    // 已被别人抢了 → 换下一个
+    if (data.bound) { showSnatched(); return; }
+
+    // 已扫码（等待确认）
+    if (data.qr_status === 'scaned') { showScanned(); return; }
+
+    // 过期→自动换新
+    if (data.qr_status === 'expired' || data.qr_status === 'not_in_pool') {
+      showExpired();
+      return;
+    }
+
+    // 二维码已更新（后端刷新了）
     if (data.qr_url && data.qr_url !== lastQrUrl) {
       lastQrUrl = data.qr_url;
       refreshSlotImage();
@@ -553,58 +627,19 @@ async function pollStatus(slotId) {
 
 function startPollingStatus(slotId) {
   if (statusTimer) clearInterval(statusTimer);
-  statusTimer = setInterval(() => pollStatus(slotId), 2000);
-}
-
-function startCountdown() {
-  if (qrTimer) clearInterval(qrTimer);
-  qrTimer = setInterval(() => {
-    countdownValue--;
-    document.getElementById('countdown').textContent =
-      countdownValue + 's 后自动刷新';
-    if (countdownValue <= 0) refreshQR();
-  }, 1000);
-}
-
-// 每 25 秒刷新同 slot 二维码图片（防缓存过期）
-function startImageRefresh() {
-  if (imageRefreshTimer) clearInterval(imageRefreshTimer);
-  imageRefreshTimer = setInterval(() => {
-    if (currentSlot && document.getElementById('qrImg')) {
-      refreshSlotImage();
-    }
-  }, 25000);
-}
-
-async function refreshQR() {
-  if (document.getElementById('refreshBtn').disabled) return;
-  showLoading();
-  if (statusTimer) clearInterval(statusTimer);
-  if (qrTimer) clearInterval(qrTimer);
-  if (imageRefreshTimer) clearInterval(imageRefreshTimer);
-  document.getElementById('countdown').textContent = '刷新中...';
-  await fetchQR();
-  startCountdown();
-  startImageRefresh();
-}
-
-async function fetchStats() {
-  try {
-    const resp = await fetch(API_BASE + '/api/v1/pool/stats');
-    if (!resp.ok) return;
-    const data = await resp.json();
-    document.getElementById('stats').textContent =
-      '已绑定 ' + data.bound + ' / 总 ' + data.total_profiles + ' 个席位';
-  } catch (e) {}
+  statusTimer = setInterval(() => pollStatus(slotId), 1500);
 }
 
 // Init
 showLoading();
 fetchQR();
-startCountdown();
-startImageRefresh();
-fetchStats();
-setInterval(fetchStats, 10000);
+setInterval(updateTicker, 8000);
+setInterval(() => {
+  fetch(API_BASE + '/api/v1/pool/stats')
+    .then(r => r.json())
+    .then(d => { document.getElementById('stats').textContent = '已绑定 ' + d.bound + ' / 总 ' + d.total_profiles + ' 个席位'; })
+    .catch(() => {});
+}, 10000);
 </script>
 </body>
 </html>
