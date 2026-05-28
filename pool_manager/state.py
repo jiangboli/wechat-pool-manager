@@ -130,6 +130,22 @@ class PoolState:
             json.dump(data, f, indent=2, ensure_ascii=False)
         self._dirty = False
 
+    # ── 微信用户去重 ──────────────────────────────────────────────────
+
+    def get_linux_user_by_user_id(self, user_id: str) -> Optional[str]:
+        """通过微信 user_id 查找已绑定的 Linux 用户名。"""
+        for name, ps in self.profiles.items():
+            if ps.get("user_id") == user_id and ps.get("status", "").startswith("bound"):
+                from .profile_manager import linux_username
+                return linux_username(name)
+        return None
+
+    def record_binding(self, name: str, user_id: str):
+        """记录绑定关系。"""
+        if name in self.profiles:
+            self.profiles[name]["user_id"] = user_id
+            self._dirty = True
+
     def load(self, path: str = None):
         """从 JSON 文件恢复状态。"""
         load_path = path or STATE_FILE

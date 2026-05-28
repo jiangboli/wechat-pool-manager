@@ -1,35 +1,120 @@
 #!/usr/bin/env python3
 """
-批量创建 Hermes profile。
+批量创建 Linux 用户（替代原来的 hermes profile create）。
 
-用法：
-    python scripts/create_profiles.py --count 100 --prefix weixin-
-    python scripts/create_profiles.py --count 50 --clone-from default --prefix wx-
+用法:
+    python3 scripts/create_profiles.py --count 100 --prefix wx
+
+每次会先读取已存在的用户列表，跳过已创建的，只补新的。
 """
 
 import argparse
 import os
+import subprocess
 import sys
+from typing import List
 
-# 将项目根目录加入 sys.path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pool_manager.profile_manager import batch_create
+def linux_user_exists(username: str) -> bool:
+    """检查 Linux 用户是否存在。"""
+    try:
+        result = subprocess.run(
+            ["id", username],
+            capture_output=True, text=True, timeout=10)
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def create_linux_user(username: str) -> bool:
+    """创建 Linux 用户（通过 sudo，依赖 sudoers 配置）。"""
+    try:
+        result = subprocess.run(
+            ["sudo", "-n", "useradd", "-m", username],
+            capture_output=True, text=True, timeout=30)
+        if result.returncode == 0:
+            return True
+        if "already exists" in result.stderr:
+            return True
+        print(f"  [!] 创建用户 {username} 失败: {result.stderr.strip()}", file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f"  [!] 创建用户 {username} 异常: {e}", file=sys.stderr)
+        return False
+
+
+def write_stub_config(username: str) -> bool:
+    """写入空的 Hermes 配置（扫码绑定后会由 setup_linux_profile 覆盖）。"""
+    import tempfile
+    import yaml
+
+    stub = {
+        "platforms": {
+            "weixin": {
+                "enabled": False,
+            },
+        },
+    }
+
+    hermes_dir = f"/home/{username}/.hermes"
+    cfg_path = f"{hermes_dir}/config.yaml"
+
+    # 创建目录
+    subprocess.run(
+        ["sudo", "-n", "mkdir", "-p", hermes_dir],
+        capture_output=True, timeout=10)
+    subprocess.run(
+        ["sudo", "-n", "chown", f"{username}:{username}", hermes_dir],
+        capture_output=True, timeout=10)
+
+    # 写临时文件
+    content = yaml.dump(stub, default_flow_style=False, allow_unicode=True)
+    yaml_path = f"/tmp/_stub_{username}.yaml"
+    with open(yaml_path, "w") as f:
+        f.write(content)
+
+    # sudo cp
+    subprocess.run(
+        ["sudo", "-n", "cp", yaml_path, cfg_path],
+        capture_output=True, timeout=10)
+    subprocess.run(
+        ["sudo", "-n", "chown", f"{username}:{username}", cfg_path],
+        capture_output=True, timeout=10)
+    os.unlink(yaml_path)
+    return True
+
+
+def batch_create_linux_users(count: int, prefix: str = "wx") -> List[str]:
+    """批量创建 Linux 用户。跳过已存在的。"""
+    existing = []
+    for entry in os.listdir("/home"):
+        if entry.startswith(prefix) and os.path.isdir(f"/home/{entry}"):
+            existing.append(entry)
+
+    created = []
+    for i in range(1, count + 1):
+        name = f"{prefix}{i:03d}"
+        if name in existing:
+            continue
+        if create_linux_user(name):
+            write_stub_config(name)
+            created.append(name)
+            print(f"  ✅ {name}")
+        else:
+            print(f"  ❌ {name}")
+
+    return created
 
 
 def main():
-    parser = argparse.ArgumentParser(description="批量创建 Hermes profile")
-    parser.add_argument("--count", type=int, default=100, help="创建数量（默认 100）")
-    parser.add_argument("--prefix", type=str, default="weixin-", help="profile 名前缀（默认 weixin-）")
-    parser.add_argument("--clone-from", type=str, default="default", help="克隆源 profile（默认 default）")
+    parser = argparse.ArgumentParser(description="批量创建 Linux 用户")
+    parser.add_argument("--count", type=int, default=100, help="总数")
+    parser.add_argument("--prefix", type=str, default="wx", help="用户名前缀")
     args = parser.parse_args()
 
-    print(f"准备创建 {args.count} 个 profile（前缀: {args.prefix}）")
-    created = batch_create(args.prefix, args.count, args.clone_from)
-    print(f"\n完成！成功创建 {len(created)} 个 profile")
-
-    if created:
-        print(f"范围: {created[0]} ~ {created[-1]}")
+    print(f"批量创建 Linux 用户: {args.count} 个，前缀: {args.prefix}")
+    created = batch_create_linux_users(args.count, args.prefix)
+    print(f"完成: 已存在 {args.count - len(created)} 个，新创建 {len(created)} 个")
 
 
 if __name__ == "__main__":
