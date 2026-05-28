@@ -110,6 +110,9 @@ class DockerScheduler:
         """确保 profile 的数据目录存在并返回 hermes 目录路径。"""
         hdir = _hermes_dir(profile, self.data_root)
         os.makedirs(hdir, exist_ok=True)
+        # 容器内的 hermes 用户需要写 .hermes/logs/ .hermes/sessions.db
+        # 目录由 pool-manager(root) 在宿主机创建，chmod 777 让容器内用户可写
+        os.chmod(hdir, 0o777)
         return hdir
 
     def write_env(self, profile: str, credentials: dict):
