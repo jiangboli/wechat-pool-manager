@@ -6,12 +6,12 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-ExecStart=%h/.hermes/hermes-agent/venv/bin/python \
+ExecStart=/opt/hermes/venv/bin/python \
   -m hermes_cli.main gateway run --replace
-WorkingDirectory=%h/.hermes/hermes-agent
-Environment="HERMES_HOME=%h/.hermes/profiles/%i"
-Environment="PATH=%h/.hermes/hermes-agent/venv/bin:%h/.hermes/node/bin:%h/.local/bin:%h/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-Environment="VIRTUAL_ENV=%h/.hermes/hermes-agent/venv"
+WorkingDirectory=/home/%i/.hermes
+Environment="HERMES_HOME=/home/%i/.hermes"
+Environment="PATH=/opt/hermes/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="VIRTUAL_ENV=/opt/hermes/venv"
 Restart=on-failure
 RestartSec=5
 RestartMaxDelaySec=60
