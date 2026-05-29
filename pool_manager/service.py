@@ -108,6 +108,47 @@ async def get_hot_slots():
     }
 
 
+@bind_app.post("/api/v1/bind/register")
+async def register_binding(req: Request):
+    """用户提交信息后，分配二维码槽位。"""
+    if not hot_pool:
+        raise HTTPException(503, "热池未启动")
+    try:
+        body = await req.json()
+    except Exception:
+        raise HTTPException(400, "请求体必须是 JSON")
+    phone = (body.get("phone") or "").strip()
+    lobster_name = (body.get("lobster_name") or "").strip()
+    user_name = (body.get("user_name") or "").strip()
+    if not phone or not lobster_name or not user_name:
+        raise HTTPException(400, "手机号、龙虾名、用户名均为必填项")
+    # 找可用槽位
+    slots = hot_pool.get_all_slots()
+    target = None
+    for s in slots:
+        if s["status"] == "waiting" and s["qr_url"]:
+            target = s
+            break
+    if not target:
+        raise HTTPException(503, "当前无可用二维码，请稍后再试")
+    slot_id = target["profile"]
+    # 将用户信息绑定到槽位
+    hot_pool.set_slot_user_info(slot_id, {
+        "phone": phone,
+        "lobster_name": lobster_name,
+        "user_name": user_name,
+    })
+    pending_token = secrets.token_hex(16)
+    # 也存一份到 pg_store（PG 可用时持久化，但热池的回调中直接用 slot 上的 user_info）
+    pg_store.save_pending_binding(pending_token, phone, lobster_name, user_name, slot_id)
+    logger.info("绑定注册: slot=%s user=%s lobster=%s", slot_id, user_name, lobster_name)
+    return {
+        "pending_token": pending_token,
+        "slot_id": slot_id,
+        "qr_url": target["qr_url"],
+    }
+
+
 @bind_app.get("/api/v1/pool/available")
 async def get_available_qr():
     if not hot_pool:

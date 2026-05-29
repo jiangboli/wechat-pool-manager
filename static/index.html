@@ -22,6 +22,9 @@
     --success: #34d399;
     --error: #f87171;
     --scan-warn: #fbbf24;
+    --input-bg: rgba(255, 255, 255, 0.06);
+    --input-border: rgba(255, 255, 255, 0.12);
+    --input-focus: rgba(245, 158, 11, 0.5);
     --radius: 20px;
     --radius-sm: 12px;
   }
@@ -38,7 +41,6 @@
     position: relative;
   }
 
-  /* Background orbs */
   body::before, body::after {
     content: '';
     position: fixed;
@@ -58,7 +60,6 @@
     bottom: -150px; left: -100px;
   }
 
-  /* Subtle grain overlay */
   .grain {
     position: fixed;
     inset: 0;
@@ -76,7 +77,6 @@
     max-width: 400px;
   }
 
-  /* Card */
   .card {
     background: var(--card-bg);
     backdrop-filter: blur(24px) saturate(1.4);
@@ -93,7 +93,6 @@
     text-align: center;
   }
 
-  /* Header */
   .logo {
     width: 48px;
     height: 48px;
@@ -120,6 +119,100 @@
     font-weight: 400;
   }
 
+  /* ── 页面切换 ── */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* ── 表单样式 ── */
+  .form-group {
+    text-align: left;
+    margin-bottom: 16px;
+  }
+
+  .form-group label {
+    display: block;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+    font-weight: 500;
+  }
+
+  .form-group input {
+    width: 100%;
+    padding: 12px 14px;
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 15px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .form-group input:focus {
+    border-color: var(--input-focus);
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+  }
+
+  .form-group input::placeholder {
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+
+  .form-group .error-msg {
+    font-size: 12px;
+    color: var(--error);
+    margin-top: 4px;
+    display: none;
+  }
+
+  .form-group.has-error input {
+    border-color: var(--error);
+  }
+
+  .form-group.has-error .error-msg {
+    display: block;
+  }
+
+  .submit-btn {
+    width: 100%;
+    padding: 14px;
+    margin-top: 8px;
+    background: linear-gradient(135deg, var(--accent), #d97706);
+    color: #0a0a1a;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: inherit;
+  }
+
+  .submit-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px var(--accent-glow);
+  }
+
+  .submit-btn:active {
+    transform: scale(0.98);
+  }
+
+  .submit-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .form-footer {
+    margin-top: 16px;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  /* ── QR 页面 ── */
   .prompt-text {
     font-size: 12px;
     color: var(--accent);
@@ -135,7 +228,18 @@
     100% { opacity: 1; }
   }
 
-  /* QR Box */
+  .lobster-greeting {
+    font-size: 16px;
+    color: var(--accent);
+    margin-bottom: 16px;
+    font-weight: 500;
+  }
+
+  .lobster-greeting .name {
+    color: #fff;
+    font-weight: 700;
+  }
+
   .qr-wrapper {
     position: relative;
     margin: 0 auto 20px;
@@ -172,7 +276,6 @@
     padding: 20px;
   }
 
-  /* QR breathing pulse */
   .qr-box.pulsing {
     animation: qrPulse 2.5s ease-in-out infinite;
   }
@@ -201,7 +304,6 @@
     box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.2);
   }
 
-  /* Outer ring decoration */
   .qr-wrapper::before {
     content: '';
     position: absolute;
@@ -211,7 +313,6 @@
     pointer-events: none;
   }
 
-  /* Status */
   .status {
     display: flex;
     align-items: center;
@@ -243,13 +344,10 @@
 
   .status.waiting { color: var(--accent); }
   .status.waiting .dot { background: var(--accent); }
-
   .status.scanned { color: var(--scan-warn); }
   .status.scanned .dot { background: var(--scan-warn); }
-
   .status.success { color: var(--success); }
   .status.success .dot { background: var(--success); }
-
   .status.error { color: var(--error); }
   .status.error .dot { background: var(--error); }
 
@@ -261,7 +359,6 @@
     min-height: 18px;
   }
 
-  /* Steps */
   .steps {
     display: flex;
     gap: 6px;
@@ -297,7 +394,6 @@
     line-height: 1.3;
   }
 
-  /* Refresh button */
   .refresh-btn {
     display: inline-flex;
     align-items: center;
@@ -337,7 +433,6 @@
     transform: rotate(180deg);
   }
 
-  /* Stats */
   .stats {
     margin-top: 20px;
     padding-top: 16px;
@@ -346,7 +441,6 @@
     color: var(--text-muted);
   }
 
-  /* Loading skeleton for QR */
   .qr-skeleton {
     width: 180px;
     height: 180px;
@@ -362,7 +456,19 @@
     100% { background-position: 0% 50%; }
   }
 
-  /* Responsive */
+  /* Back link */
+  .back-link {
+    display: inline-block;
+    margin-top: 12px;
+    font-size: 13px;
+    color: var(--text-muted);
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .back-link:hover {
+    color: var(--text-secondary);
+  }
+
   @media (max-width: 440px) {
     body { padding: 12px; }
     .card { padding: 24px 16px 24px; border-radius: 16px; }
@@ -387,58 +493,85 @@
 <div class="grain"></div>
 
 <div class="container">
-  <div class="card" id="card">
+  <div class="card">
     <!-- Logo -->
     <img class="logo" src="dosh.png" alt="logo">
-
-    <!-- Title -->
     <h1>Just Claw Do It</h1>
     <p class="subtitle">在微信里养一只属于自己的虾</p>
 
-    <!-- Prompt -->
-    <p class="prompt-text">📢 请及时领取您的虾苗</p>
+    <!-- ── Page 1: 表单 ── -->
+    <div class="page active" id="pageForm">
+      <p class="prompt-text">🦐 先领养，再扫码</p>
 
-    <!-- QR Code -->
-    <div class="qr-wrapper">
-      <div class="qr-box pulsing" id="qrBox">
-        <div class="qr-placeholder" id="qrContent">
-          <div class="qr-skeleton"></div>
+      <div class="form-group" id="fgPhone">
+        <label>手机号</label>
+        <input type="tel" id="inputPhone" placeholder="请输入手机号" maxlength="20" autocomplete="tel">
+        <div class="error-msg">请填写手机号</div>
+      </div>
+
+      <div class="form-group" id="fgUser">
+        <label>用户名</label>
+        <input type="text" id="inputUser" placeholder="怎么称呼您？" maxlength="64" autocomplete="name">
+        <div class="error-msg">请填写用户名</div>
+      </div>
+
+      <div class="form-group" id="fgLobster">
+        <label>龙虾名</label>
+        <input type="text" id="inputLobster" placeholder="给您的机器人取个名字" maxlength="64">
+        <div class="error-msg">请填写龙虾名</div>
+      </div>
+
+      <button class="submit-btn" id="submitBtn" onclick="submitForm()">🐉 开始绑定</button>
+
+      <div class="form-footer">
+        提交后我们将为您分配一个专属二维码，扫码即可完成绑定
+      </div>
+    </div>
+
+    <!-- ── Page 2: 扫码 ── -->
+    <div class="page" id="pageQR">
+      <p class="lobster-greeting" id="greeting">亲爱的 <span class="name" id="lobsterName"></span>，请扫码</p>
+      <p class="prompt-text">📢 用微信扫一扫认领您的虾</p>
+
+      <div class="qr-wrapper">
+        <div class="qr-box pulsing" id="qrBox">
+          <div class="qr-placeholder" id="qrContent">
+            <div class="qr-skeleton"></div>
+          </div>
+          <div class="success-icon">✓</div>
         </div>
-        <div class="success-icon">✓</div>
       </div>
+
+      <div class="status" id="status">
+        <span class="dot pulse" id="statusDot"></span>
+        <span id="statusText">准备中...</span>
+      </div>
+      <div class="countdown" id="countdown"></div>
+
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-label">打开微信「扫一扫」</div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-label">扫描上方二维码</div>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-label">确认登录，自动绑定</div>
+        </div>
+      </div>
+
+      <button class="refresh-btn" id="refreshBtn" onclick="refreshQR()">
+        <span class="icon">↻</span>
+        刷新二维码
+      </button>
+
+      <a class="back-link" onclick="backToForm()">← 重新填写信息</a>
+
+      <div class="stats" id="stats"></div>
     </div>
-
-    <!-- Status -->
-    <div class="status" id="status">
-      <span class="dot pulse" id="statusDot"></span>
-      <span id="statusText">准备中...</span>
-    </div>
-    <div class="countdown" id="countdown"></div>
-
-    <!-- Steps -->
-    <div class="steps">
-      <div class="step">
-        <div class="step-num">1</div>
-        <div class="step-label">打开微信「扫一扫」</div>
-      </div>
-      <div class="step">
-        <div class="step-num">2</div>
-        <div class="step-label">扫描上方二维码</div>
-      </div>
-      <div class="step">
-        <div class="step-num">3</div>
-        <div class="step-label">确认登录，自动绑定</div>
-      </div>
-    </div>
-
-    <!-- Refresh -->
-    <button class="refresh-btn" id="refreshBtn" onclick="refreshQR()">
-      <span class="icon">↻</span>
-      刷新二维码
-    </button>
-
-    <!-- Stats -->
-    <div class="stats" id="stats"></div>
   </div>
 </div>
 
@@ -450,6 +583,91 @@ let statusTimer = null;
 let imageRefreshTimer = null;
 let countdownValue = 50;
 let lastQrUrl = '';
+
+// ── 表单提交 ──
+
+function validateForm() {
+  let valid = true;
+  ['Phone', 'User', 'Lobster'].forEach(f => {
+    const el = document.getElementById('fg' + f);
+    const input = document.getElementById('input' + f);
+    if (!input.value.trim()) {
+      el.classList.add('has-error');
+      valid = false;
+    } else {
+      el.classList.remove('has-error');
+    }
+  });
+  return valid;
+}
+
+function clearErrors() {
+  ['Phone', 'User', 'Lobster'].forEach(f => {
+    document.getElementById('fg' + f).classList.remove('has-error');
+  });
+}
+
+async function submitForm() {
+  clearErrors();
+  if (!validateForm()) return;
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ 请稍候...';
+
+  try {
+    const resp = await fetch(API_BASE + '/api/v1/bind/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone: document.getElementById('inputPhone').value.trim(),
+        user_name: document.getElementById('inputUser').value.trim(),
+        lobster_name: document.getElementById('inputLobster').value.trim(),
+      }),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.text();
+      alert('操作失败：' + (err || resp.statusText));
+      btn.disabled = false;
+      btn.textContent = '🐉 开始绑定';
+      return;
+    }
+
+    const data = await resp.json();
+    // 切换到扫码页面
+    document.getElementById('pageForm').classList.remove('active');
+    document.getElementById('pageQR').classList.add('active');
+    document.getElementById('lobsterName').textContent = data.lobster_name || '虾';
+
+    showQR(data.qr_url, data.slot_id);
+    countdownValue = 50;
+    startPollingStatus(data.slot_id);
+    startCountdown();
+    startImageRefresh();
+    fetchStats();
+
+  } catch (e) {
+    alert('网络错误，请检查连接后重试');
+    btn.disabled = false;
+    btn.textContent = '🐉 开始绑定';
+  }
+}
+
+function backToForm() {
+  // 停止所有定时器
+  if (qrTimer) clearInterval(qrTimer);
+  if (statusTimer) clearInterval(statusTimer);
+  if (imageRefreshTimer) clearInterval(imageRefreshTimer);
+  currentSlot = null;
+
+  document.getElementById('pageQR').classList.remove('active');
+  document.getElementById('pageForm').classList.add('active');
+  document.getElementById('submitBtn').disabled = false;
+  document.getElementById('submitBtn').textContent = '🐉 开始绑定';
+}
+
+// ── QR 操作 ──
 
 function showError(msg) {
   const qrBox = document.getElementById('qrBox');
@@ -481,7 +699,6 @@ function showQR(url, slotId) {
 }
 
 function refreshSlotImage() {
-  // 同 slot 刷新图片（不换 slot_id），带缓存破坏
   if (!currentSlot) return;
   const img = document.getElementById('qrImg');
   if (img) {
@@ -514,22 +731,6 @@ function setStatus(text, type) {
   textEl.textContent = text;
 }
 
-async function fetchQR() {
-  try {
-    const resp = await fetch(API_BASE + '/api/v1/pool/available');
-    if (!resp.ok) {
-      showError('暂无可用二维码，请稍后再试');
-      return;
-    }
-    const data = await resp.json();
-    showQR(data.qr_url, data.slot_id);
-    countdownValue = 50;
-    startPollingStatus(data.slot_id);
-  } catch (e) {
-    showError('网络错误，请检查连接');
-  }
-}
-
 async function pollStatus(slotId) {
   try {
     const resp = await fetch(API_BASE + '/api/v1/pool/status/' + slotId);
@@ -537,13 +738,11 @@ async function pollStatus(slotId) {
     const data = await resp.json();
     if (data.bound) { showSuccess(); return; }
     if (data.qr_status === 'scaned') { showScanned(); return; }
-    // 检测二维码过期→自动重载同 slot 图片
     if (data.qr_status === 'expired') {
       setStatus('二维码已过期，正在刷新...', 'error');
       setTimeout(refreshSlotImage, 500);
       return;
     }
-    // 检测后端是否刷新了二维码（同 slot，新 qr_url）
     if (data.qr_url && data.qr_url !== lastQrUrl) {
       lastQrUrl = data.qr_url;
       refreshSlotImage();
@@ -566,7 +765,6 @@ function startCountdown() {
   }, 1000);
 }
 
-// 每 25 秒刷新同 slot 二维码图片（防缓存过期）
 function startImageRefresh() {
   if (imageRefreshTimer) clearInterval(imageRefreshTimer);
   imageRefreshTimer = setInterval(() => {
@@ -583,9 +781,15 @@ async function refreshQR() {
   if (qrTimer) clearInterval(qrTimer);
   if (imageRefreshTimer) clearInterval(imageRefreshTimer);
   document.getElementById('countdown').textContent = '刷新中...';
-  await fetchQR();
-  startCountdown();
-  startImageRefresh();
+
+  // 重新从表单获取二维码（带同一用户信息）
+  if (currentSlot) {
+    // 只是刷新 slot 图片，不重新提交表单
+    refreshSlotImage();
+    startPollingStatus(currentSlot);
+    startCountdown();
+    startImageRefresh();
+  }
 }
 
 async function fetchStats() {
@@ -598,13 +802,12 @@ async function fetchStats() {
   } catch (e) {}
 }
 
-// Init
-showLoading();
-fetchQR();
-startCountdown();
-startImageRefresh();
-fetchStats();
-setInterval(fetchStats, 10000);
+// 输入时清除错误状态
+['Phone', 'User', 'Lobster'].forEach(f => {
+  document.getElementById('input' + f).addEventListener('input', function() {
+    document.getElementById('fg' + f).classList.remove('has-error');
+  });
+});
 </script>
 </body>
 </html>

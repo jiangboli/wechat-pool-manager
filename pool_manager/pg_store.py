@@ -1,9 +1,3 @@
-"""PG 持久化层——封装所有数据库操作。
-
-使用 SQLAlchemy 2.0 async 模式 + asyncpg 驱动。
-PG 不可用时降级（不阻止服务启动），只写日志警告。
-"""
-
 import logging
 import os
 import socket
@@ -11,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlalchemy import select, update, delete
+from sqlalchemy import select, update, delete, text
 from sqlalchemy.exc import OperationalError
 
 from .models import Base, Machine, Binding, DockerContainer, QrHistory, GatewayHealthLog
@@ -51,6 +45,9 @@ def _detect_machine_info():
 class PgStore:
     """PG 持久化层。"""
 
+    # 内存中的待绑定用户信息（PG 降级时用）
+    _pending_bindings: Dict[str, dict] = {}
+
     def __init__(self):
         self.dsn: str = ""
         self.engine = None
@@ -79,7 +76,7 @@ class PgStore:
                 await session.execute(select(1))
             self._connected = True
             self._enabled = True
-            logger.info("PG 连接成功: %s", self.dsn.split("@")[-1])  # 不打印密码
+            logger.info("PG 连接成功: %s", self.dsn.split("@")[-1] if "@" in self.dsn else self.dsn)
             await self._ensure_schema()
         except OperationalError as e:
             logger.warning("PG 连接失败（服务正常启动，PG 功能禁用）: %s", e)
@@ -91,10 +88,17 @@ class PgStore:
             self._enabled = False
 
     async def _ensure_schema(self):
-        """幂等创建所有表。"""
+        """幂等创建所有表 + 迁移新列。"""
         try:
             async with self.engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
+                # 迁移：确保新列存在（兼容旧库）
+                for col in ["phone", "lobster_name", "user_name"]:
+                    sql = text(
+                        "ALTER TABLE bindings ADD COLUMN IF NOT EXISTS "
+                        f"{col} VARCHAR(64)"
+                    )
+                    await conn.execute(sql)
             logger.info("PG schema 已就绪")
         except Exception as e:
             # 多容器同时 create_all 可能触发 pg_type 唯一约束冲突，忽略
@@ -151,9 +155,25 @@ class PgStore:
 
     # ── 绑定管理 ────────────────────────────────────────────────────
 
+    def save_pending_binding(self, token: str, phone: str, lobster_name: str, user_name: str, slot_id: str):
+        """在用户提交表单后、扫码确认前，暂存用户信息。"""
+        self._pending_bindings[token] = {
+            "phone": phone,
+            "lobster_name": lobster_name,
+            "user_name": user_name,
+            "slot_id": slot_id,
+        }
+        logger.info("待绑定信息已暂存: token=%s slot=%s", token[:8], slot_id)
+
+    def get_pending_binding(self, token: str) -> Optional[dict]:
+        """扫码确认后获取暂存的用户信息。"""
+        return self._pending_bindings.pop(token, None)
+
     async def create_binding(self, profile: str, user_id: str, account_id: str,
                               bot_token: str, bot_base_url: str,
-                              nickname: str = "", avatar_url: str = "") -> Optional[int]:
+                              nickname: str = "", avatar_url: str = "",
+                              phone: str = "", lobster_name: str = "",
+                              user_name: str = "") -> Optional[int]:
         """创建绑定记录。"""
         if not self._enabled:
             return None
@@ -167,6 +187,9 @@ class PgStore:
                     account_id=account_id,
                     nickname=nickname or "",
                     avatar_url=avatar_url or "",
+                    phone=phone or "",
+                    lobster_name=lobster_name or "",
+                    user_name=user_name or "",
                     bot_token=bot_token,
                     bot_base_url=bot_base_url,
                     status="active",
@@ -175,11 +198,14 @@ class PgStore:
                 )
                 session.add(binding)
                 await session.commit()
-                logger.info("绑定记录已创建: profile=%s user_id=%s", profile, user_id)
+                logger.info("绑定记录已创建: profile=%s user_id=%s lobster=%s",
+                           profile, user_id, lobster_name or "(未设置)")
                 return binding.id
         except Exception as e:
             logger.warning("创建绑定记录失败: %s", e)
             return None
+
+
 
     async def find_binding_by_user_id(self, user_id: str) -> Optional[dict]:
         """按微信 user_id 查找绑定（跨机器去重）。"""
@@ -205,6 +231,7 @@ class PgStore:
             logger.warning("查询绑定失败: %s", e)
             return None
 
+    
     async def list_bindings(self) -> List[Dict[str, Any]]:
         """列出所有绑定。"""
         if not self._enabled:
@@ -402,5 +429,5 @@ class PgStore:
             logger.warning("更新心跳失败: %s", e)
 
 
-# ── 全局单例 ──────────────────────────────────────────────────────
-pg_store = PgStore()
+    # ── 全局单例 ──────────────────────────────────────────────────────
+    pg_store = PgStore()

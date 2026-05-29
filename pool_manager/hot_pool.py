@@ -52,6 +52,9 @@ class HotPoolSlot:
         self.user_id: Optional[str] = None
         self.bot_base_url: Optional[str] = None
 
+        # 用户提交的信息（表单填写）
+        self.user_info: Optional[dict] = None
+
         self._aiohttp = None
         self._running = False
 
@@ -214,23 +217,28 @@ class HotPool:
                     self.state.mark_bound(profile, slot.user_id)
                     logger.info("[%s] 绑定完成，创建 Docker 容器", profile)
                     # 创建并启动 Docker 容器
+                    lobster_name = (slot.user_info or {}).get("lobster_name", "")
                     ok = self._scheduler.create_container(profile, {
                         "account_id": slot.account_id,
                         "token": slot.token,
                         "base_url": slot.bot_base_url or "",
                         "user_id": slot.user_id or "",
-                    }) if self._scheduler else False
+                    }, lobster_name=lobster_name) if self._scheduler else False
                     if ok:
                         logger.info("[%s] Docker 容器已创建并启动", profile)
                         # ── PG 持久化 ──
                         if pg_store.enabled:
                             container_name = f"hermes-{profile}"
+                            ui = slot.user_info or {}
                             binding_id = await pg_store.create_binding(
                                 profile=profile,
                                 user_id=slot.user_id or "",
                                 account_id=slot.account_id or "",
                                 bot_token=slot.token or "",
                                 bot_base_url=slot.bot_base_url or "",
+                                phone=ui.get("phone", ""),
+                                lobster_name=ui.get("lobster_name", ""),
+                                user_name=ui.get("user_name", ""),
                             )
                             if binding_id:
                                 await pg_store.create_container(
@@ -266,13 +274,7 @@ class HotPool:
         self._tasks[profile] = task
 
     async def _on_confirmed(self, result: dict):
-        """QR 确认回调——创建/重用 Linux 用户 + 写入凭证 + 启动 gateway。
-
-        安全设计：
-        - .env 只写微信凭证（account_id, token），不写任何 API key
-        - config.yaml 不写 api_key
-        - 模型配置（provider, base_url）指向 proxy 地址
-        """
+        """QR 确认回调——创建/重用 Linux 用户 + 写入凭证 + 启动 gateway。"""
         profile = result["profile"]
         credentials = {
             "account_id": result["account_id"],
@@ -319,3 +321,10 @@ class HotPool:
                 "refreshed_at": slot.refreshed_at,
             })
         return result
+
+    def set_slot_user_info(self, profile: str, user_info: dict):
+        """将用户提交的信息绑定到指定槽位。"""
+        slot = self.slots.get(profile)
+        if slot:
+            slot.user_info = user_info
+            logger.info("[%s] 用户信息已绑定: %s", profile, user_info.get("user_name", ""))

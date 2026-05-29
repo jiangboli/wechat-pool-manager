@@ -190,11 +190,11 @@ security:
         logger.info("[%s] 配置文件已写入 %s", profile, cfg_path)
         os.chown(cfg_path, 1000, -1)
 
-    def write_soul(self, profile: str):
+    def write_soul(self, profile: str, lobster_name: str = ""):
         """写入容器 ~/.hermes/SOUL.md（agent 身份/人格定义）。"""
         hdir = self.ensure_data_dir(profile)
         soul_path = os.path.join(hdir, "SOUL.md")
-        name = self.config.get("agent", {}).get("name", "Claw DO")
+        name = lobster_name or self.config.get("agent", {}).get("name", "Claw DO")
         content = f"""你叫 {name}，是一个运行在 Hermes Agent 中的微信智能助手。
 
 ## 回答规范
@@ -212,7 +212,7 @@ security:
 
     # ── 容器生命周期 ────────────────────────────────────────────
 
-    def create_container(self, profile: str, credentials: Optional[dict] = None) -> bool:
+    def create_container(self, profile: str, credentials: Optional[dict] = None, lobster_name: str = "") -> bool:
         """创建并启动一个 hermes-bot 容器。
 
         流程：
@@ -245,7 +245,7 @@ security:
         if credentials:
             self.write_env(profile, credentials)
         self.write_config(profile)
-        self.write_soul(profile)
+        self.write_soul(profile, lobster_name=lobster_name)
 
         # 计算宿主机路径（给 Docker API 挂载用）
         hdir_host = _hermes_dir(profile, self.data_root_host)
