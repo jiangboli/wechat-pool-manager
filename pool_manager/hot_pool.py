@@ -19,6 +19,7 @@ from typing import Callable, Dict, Optional
 
 from . import docker_scheduler as ds
 from . import gateway_manager as gm
+from .pg_store import pg_store
 
 logger = logging.getLogger("pool_manager.hot_pool")
 
@@ -221,6 +222,26 @@ class HotPool:
                     }) if self._scheduler else False
                     if ok:
                         logger.info("[%s] Docker 容器已创建并启动", profile)
+                        # ── PG 持久化 ──
+                        if pg_store.enabled:
+                            container_name = f"hermes-{profile}"
+                            binding_id = await pg_store.create_binding(
+                                profile=profile,
+                                user_id=slot.user_id or "",
+                                account_id=slot.account_id or "",
+                                bot_token=slot.token or "",
+                                bot_base_url=slot.bot_base_url or "",
+                            )
+                            if binding_id:
+                                await pg_store.create_container(
+                                    binding_id=binding_id,
+                                    container_name=container_name,
+                                    container_id="",
+                                    image="hermes-bot:latest",
+                                    status="running",
+                                    memory_limit="2g",
+                                )
+                            await pg_store.log_qr_event(profile, "confirmed", slot.user_id)
                     else:
                         logger.error("[%s] Docker 容器创建失败", profile)
                         self.state.mark_unhealthy(profile, "容器创建失败")

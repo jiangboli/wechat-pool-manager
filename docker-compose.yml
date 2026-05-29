@@ -10,6 +10,8 @@ services:
     command: ["--mode", "bind", "--config", "/app/config.yaml"]
     ports:
       - "8765:8765"
+    environment:
+      CLAW_DO_DSN: "${CLAW_DO_DSN}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${HOME_DATA:-/home/dosh/data}:/home/data
@@ -39,8 +41,8 @@ services:
       - hermes-pool-net
     restart: unless-stopped
     environment:
-      # 不设置则首次启动自动生成随机 token，写入 $HOME_DATA/pool-manager/admin_token
       ADMIN_TOKEN: "${ADMIN_TOKEN}"
+      CLAW_DO_DSN: "${CLAW_DO_DSN}"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8766/health')"]
       interval: 30s

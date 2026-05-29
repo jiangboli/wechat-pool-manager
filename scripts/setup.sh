@@ -25,6 +25,7 @@ PORT=8765
 PREFIX="weixin-"
 HOST="0.0.0.0"
 ADMIN_TOKEN=""
+PG_DSN=""
 
 # ── 参数解析 ──────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -36,6 +37,7 @@ while [[ $# -gt 0 ]]; do
     --prefix)      PREFIX="$2";     shift 2 ;;
     --host)        HOST="$2";       shift 2 ;;
     --admin-token) ADMIN_TOKEN="$2"; shift 2 ;;
+    --pg-dsn)     PG_DSN="$2";       shift 2 ;;
     --help|-h)
       echo "用法: bash setup.sh [选项]"
       echo ""
@@ -47,10 +49,11 @@ while [[ $# -gt 0 ]]; do
       echo "  --prefix STR     命名前缀（默认 weixin-）"
       echo "  --host STR       监听地址（默认 0.0.0.0）"
       echo "  --admin-token STR 管理接口 Token（不传则自动生成随机 Token）"
+      echo "  --pg-dsn STR    PG 连接 DSN (postgresql+asyncpg://user:pass@host:port/db)"
       echo ""
       echo "示例:"
       echo "  bash setup.sh --total 30 --hot-pool 3"
-      echo "  bash setup.sh --admin-token my-secret-token"
+      echo "  bash setup.sh --admin-token my-secret-token --pg-dsn \"postgresql+asyncpg://...\""
       exit 0
       ;;
     *) echo "未知参数: $1"; exit 1 ;;
@@ -155,8 +158,9 @@ echo "  Admin Token: $ADMIN_TOKEN"
 cat > "$PROJECT_DIR/.env" << ENVEOF
 ADMIN_TOKEN=$ADMIN_TOKEN
 HOME_DATA=$DATA_ROOT
+CLAW_DO_DSN=$PG_DSN
 ENVEOF
-echo "  .env 已生成 (包含 ADMIN_TOKEN + HOME_DATA)"
+echo "  .env 已生成 (包含 ADMIN_TOKEN + HOME_DATA + CLAW_DO_DSN)"
 
 # ── 构建 Docker 镜像 ──────────────────────────────────────────────────────
 echo "[3/6] 🔨 构建 Docker 镜像..."

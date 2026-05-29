@@ -30,6 +30,7 @@ from . import gateway_manager as gm
 from . import profile_manager as pm
 from . import proxy as llm_proxy
 from . import docker_scheduler as ds
+from .pg_store import pg_store
 
 # ── 日志 ──────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -393,6 +394,16 @@ async def _start_bind():
     except Exception as e:
         logger.warning("扫描已有容器失败（首次部署时正常）: %s", e)
 
+    # ── PG 持久化初始化 ──────────────────────────────────────────
+    await pg_store.connect()
+    if pg_store.enabled:
+        try:
+            containers = scheduler.list_containers()
+            await pg_store.register_machine(total_slots=total, hot_pool_size=5)
+            await pg_store.restore_bindings_from_containers(containers)
+        except Exception as e:
+            logger.warning("PG 初始化异常: %s", e)
+
     logger.info("池状态已初始化，共 %d 个槽位", len(profile_names))
 
     hot_pool = HotPool(config, state, pm, gm)
@@ -408,13 +419,14 @@ async def _start_bind():
 
 
 async def _start_admin():
-    """初始化管理服务（状态 + DockerScheduler + AdminToken）。"""
+    """初始化管理服务（状态 + DockerScheduler + AdminToken + PG）。"""
     global scheduler
 
     state.load()
     scheduler = ds.DockerScheduler(config)
     gm.set_scheduler(scheduler)
     init_admin_token()
+    await pg_store.connect()
     logger.info("Admin 服务启动完成")
 
 
@@ -452,6 +464,7 @@ def _setup_lifespan(app_obj, mode):
             state.save()
             if scheduler:
                 scheduler.close()
+        await pg_store.close()
         logger.info("%s 服务已关闭", mode)
 
 
