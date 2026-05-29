@@ -1,13 +1,15 @@
 """状态持久化——将池管理器状态保存到 JSON 文件。"""
 
 import json
+import logging
 import os
 import time
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 
-# 状态文件路径（Pool Manager Docker 化后，挂载到 /home/pool-data/）
-STATE_FILE = os.path.expanduser("~/.hermes/wechat-pool/pool_state.json")
+# 状态文件路径（存储在持久化数据卷 /home/data/pool-manager/ 下）
+# 容器重建后状态不丢失
+STATE_FILE = "/home/data/pool-manager/pool_state.json"
 
 # Profile 状态枚举
 STATUS_AVAILABLE = "available"        # 已创建但从未入热池
@@ -157,3 +159,22 @@ class PoolState:
             self.stats.update(data.get("stats", {}))
         except (json.JSONDecodeError, IOError):
             pass
+
+    def restore_from_containers(self, containers: List[dict]):
+        """从现有 Docker 容器恢复绑定状态（状态文件丢失时的 fallback）。
+
+        containers: scheduler.list_containers() 返回的列表，每项含 profile, status, running 等。
+        """
+        for c in containers:
+            profile = c.get("profile")
+            if profile and profile in self.profiles:
+                status = c.get("status", "")
+                if status == "running":
+                    self.set_status(profile, STATUS_BOUND_HEALTHY,
+                                    last_active=time.strftime("%Y-%m-%dT%H:%M:%S"))
+                else:
+                    self.set_status(profile, STATUS_BOUND_IDLE,
+                                    last_active=c.get("created_at", ""))
+        if containers:
+            logger = logging.getLogger("pool_manager.state")
+            logger.info("从 %d 个现有 Docker 容器恢复绑定状态", len(containers))

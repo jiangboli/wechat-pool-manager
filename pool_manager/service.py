@@ -383,6 +383,16 @@ async def _start_bind():
         ps = state.profiles[name]
         if ps.get("status") in ("in_hot_pool", "qr_failed"):
             state.mark_available(name)
+
+    # 从现有 Docker 容器恢复绑定状态（状态文件丢失或容器重建时的 fallback）
+    try:
+        containers = scheduler.list_containers()
+        if containers:
+            state.restore_from_containers(containers)
+            logger.info("已从 %d 个已有容器恢复绑定状态", len(containers))
+    except Exception as e:
+        logger.warning("扫描已有容器失败（首次部署时正常）: %s", e)
+
     logger.info("池状态已初始化，共 %d 个槽位", len(profile_names))
 
     hot_pool = HotPool(config, state, pm, gm)
