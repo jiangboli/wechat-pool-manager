@@ -83,9 +83,16 @@ class PgStore:
 
     async def _ensure_schema(self):
         """幂等创建所有表。"""
-        async with self.engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("PG schema 已就绪")
+        try:
+            async with self.engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("PG schema 已就绪")
+        except Exception as e:
+            # 多容器同时 create_all 可能触发 pg_type 唯一约束冲突，忽略
+            if "UniqueViolationError" in type(e).__name__ or "duplicate key" in str(e).lower():
+                logger.info("PG schema 已存在（并发创建检测到）")
+            else:
+                raise
 
     async def close(self):
         """关闭连接池。"""
