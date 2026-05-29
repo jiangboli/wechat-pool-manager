@@ -142,7 +142,7 @@ class DockerScheduler:
         logger.info("[%s] 凭证已写入 %s", profile, env_path)
         os.chown(env_path, 1000, -1)
 
-    def write_config(self, profile: str, proxy_host: str = "pool-manager", proxy_port: int = 8765):
+    def write_config(self, profile: str, proxy_host: str = "pool-proxy", proxy_port: int = 8767):
         """写入容器 ~/.hermes/config.yaml。
 
         platform 配置 + LLM proxy 地址。
@@ -191,11 +191,16 @@ approvals:
         hdir = self.ensure_data_dir(profile)
         soul_path = os.path.join(hdir, "SOUL.md")
         name = self.config.get("agent", {}).get("name", "Claw DO")
-        content = f"""You are {name}, a friendly WeChat assistant living inside Hermes Agent.
-You help users with their requests in a warm, playful tone.
-Keep responses concise and helpful.
+        content = f"""你叫 {name}，是一个运行在 Hermes Agent 中的微信智能助手。
 
-Your identity: {name}
+## 回答规范
+- 默认使用中文回答用户问题
+- 保持简洁、友好的语气
+- 回答要直接有用，不啰嗦
+
+## 身份标识
+- 你的名字是 {name}
+- 你是一只属于用户的微信助手虾
 """
         with open(soul_path, "w") as f:
             f.write(content)

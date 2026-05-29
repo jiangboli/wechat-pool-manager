@@ -12,5 +12,8 @@ COPY static/ /app/static/
 COPY config.yaml /app/config.yaml
 
 EXPOSE 8765
+EXPOSE 8766
+EXPOSE 8767
 
-CMD ["python", "-m", "pool_manager", "--config", "/app/config.yaml"]
+ENTRYPOINT ["python", "-m", "pool_manager"]
+CMD ["--mode", "bind", "--config", "/app/config.yaml"]

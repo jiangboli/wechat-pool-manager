@@ -1,11 +1,9 @@
-"""Pool Manager 主服务——FastAPI 应用。
+"""Pool Manager 主服务——3 个独立 FastAPI 应用。
 
 启动方式（Docker 模式）：
-    python -m pool_manager.service --config /path/to/config.yaml
-
-架构变化（v3.0）：
-    每个微信用户一个 Docker 容器，由 DockerScheduler 管理
-    Pool Manager 自身也在 Docker 中运行
+    python -m pool_manager --mode bind     --config /app/config.yaml
+    python -m pool_manager --mode admin    --config /app/config.yaml
+    python -m pool_manager --mode proxy    --config /app/config.yaml
 """
 
 import argparse
@@ -14,13 +12,14 @@ import io
 import json
 import logging
 import os
+import secrets
 import sys
 from pathlib import Path
 from typing import Optional
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, Response, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import load_config, resolve_path
@@ -40,7 +39,6 @@ logging.basicConfig(
 logger = logging.getLogger("pool_manager")
 
 # ── 全局实例 ──────────────────────────────────────────────────────────
-app = FastAPI(title="WeChat Gateway Pool Manager", version="3.0.0")
 config: dict = {}
 state = PoolState()
 hot_pool: Optional[HotPool] = None
@@ -48,21 +46,29 @@ pool_task: Optional[asyncio.Task] = None
 scheduler: Optional[ds.DockerScheduler] = None
 health_task: Optional[asyncio.Task] = None
 
+# ── 三个独立 FastAPI 应用 ────────────────────────────────────────────
+
+# 应用 A：绑定页（对外公开）
+bind_app = FastAPI(title="Pool Manager - Binding")
+
+# 应用 B：管理端（127.0.0.1 + Token 认证）
+admin_app = FastAPI(title="Pool Manager - Admin")
+
+# 应用 C：LLM Proxy（仅聊天，bot 容器用）
+proxy_app = FastAPI(title="Pool Manager - LLM Proxy")
+
 # ── 静态文件 ──────────────────────────────────────────────────────────
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "../static")
 if os.path.exists(STATIC_DIR):
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
-# ── 注册 proxy 路由 ─────────────────────────────────────────────────
-app.include_router(llm_proxy.router)
+    bind_app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 # ═════════════════════════════════════════════════════════════════════
-# API 端点
+# 绑定页 API（bind_app）
 # ═════════════════════════════════════════════════════════════════════
 
 
-@app.get("/")
+@bind_app.get("/")
 async def root():
     index_path = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(index_path):
@@ -70,7 +76,7 @@ async def root():
     return {"message": "Pool Manager running. Frontend not found."}
 
 
-@app.get("/api/v1/pool/hot-slots")
+@bind_app.get("/api/v1/pool/hot-slots")
 async def get_hot_slots():
     if not hot_pool:
         raise HTTPException(503, "热池未启动")
@@ -101,7 +107,7 @@ async def get_hot_slots():
     }
 
 
-@app.get("/api/v1/pool/available")
+@bind_app.get("/api/v1/pool/available")
 async def get_available_qr():
     if not hot_pool:
         raise HTTPException(503, "热池未启动")
@@ -115,7 +121,7 @@ async def get_available_qr():
     return {"slot_id": s["profile"], "qr_url": s["qr_url"], "status": s["status"]}
 
 
-@app.get("/api/v1/pool/status/{slot_id}")
+@bind_app.get("/api/v1/pool/status/{slot_id}")
 async def get_slot_status(slot_id: str):
     if not hot_pool:
         raise HTTPException(503, "热池未启动")
@@ -142,7 +148,7 @@ async def get_slot_status(slot_id: str):
     }
 
 
-@app.get("/api/v1/pool/qr-image/{slot_id}")
+@bind_app.get("/api/v1/pool/qr-image/{slot_id}")
 async def get_qr_image(slot_id: str):
     if not hot_pool:
         raise HTTPException(503, "热池未启动")
@@ -171,12 +177,86 @@ async def get_qr_image(slot_id: str):
         raise HTTPException(500, f"生成二维码失败: {e}")
 
 
-@app.get("/api/v1/pool/stats")
+@bind_app.get("/api/v1/pool/stats")
 async def get_pool_stats():
     return state.get_stats()
 
 
-@app.get("/api/v1/gateways")
+@bind_app.get("/health")
+async def bind_health():
+    container_count = scheduler.list_containers() if scheduler else []
+    return {
+        "service": "pool-bind",
+        "status": "ok",
+        "version": "3.0.0",
+        "pool_stats": state.get_stats(),
+        "containers": len(container_count),
+    }
+
+
+# ═════════════════════════════════════════════════════════════════════
+# 管理 API（admin_app）
+# ═════════════════════════════════════════════════════════════════════
+
+# ── Admin Token ───────────────────────────────────────────────────
+ADMIN_TOKEN = ""
+
+
+def init_admin_token():
+    """初始化 Admin Token。优先级：环境变量 > 文件 > 随机生成。"""
+    global ADMIN_TOKEN
+    token_path = "/home/data/pool-manager/admin_token"
+    os.makedirs(os.path.dirname(token_path), exist_ok=True)
+
+    # 1. 环境变量
+    env_token = os.environ.get("ADMIN_TOKEN", "")
+    if env_token:
+        ADMIN_TOKEN = env_token
+        with open(token_path, "w") as f:
+            f.write(ADMIN_TOKEN + "\n")
+        logger.info("Admin Token 已从环境变量读取")
+        return
+
+    # 2. 已有文件
+    if os.path.exists(token_path):
+        with open(token_path) as f:
+            stored = f.read().strip()
+        if stored:
+            ADMIN_TOKEN = stored
+            logger.info("Admin Token 已从文件读取")
+            return
+
+    # 3. 随机生成
+    ADMIN_TOKEN = "pm_" + secrets.token_hex(16)
+    with open(token_path, "w") as f:
+        f.write(ADMIN_TOKEN + "\n")
+    logger.warning("=" * 60)
+    logger.warning("首次启动，Admin Token 已生成:")
+    logger.warning("  %s", ADMIN_TOKEN)
+    logger.warning("  已写入 %s", token_path)
+    logger.warning("=" * 60)
+
+
+@admin_app.middleware("http")
+async def admin_token_middleware(request: Request, call_next):
+    """Admin Token 验证中间件。"""
+    if request.url.path == "/health":
+        return await call_next(request)
+    token = request.headers.get("X-Admin-Token", "")
+    if not secrets.compare_digest(token, ADMIN_TOKEN):
+        logger.warning("Admin 接口未授权访问: %s %s", request.method, request.url.path)
+        return JSONResponse(
+            status_code=403,
+            content={"error": "Forbidden", "message": "需要有效的 X-Admin-Token 头"},
+        )
+    return await call_next(request)
+
+
+# 注册 proxy 管理路由（包含 /v1/chat/completions 和 /api/v1/proxy/*）
+admin_app.include_router(llm_proxy.router)
+
+
+@admin_app.get("/api/v1/gateways")
 async def list_gateways():
     """列出所有 gateway 及其状态（基于 Docker 容器列表）。"""
     if not scheduler:
@@ -200,7 +280,7 @@ async def list_gateways():
     return {"gateways": result, "total": len(result)}
 
 
-@app.post("/api/v1/gateway/{profile}/start")
+@admin_app.post("/api/v1/gateway/{profile}/start")
 async def start_gateway(profile: str):
     if not scheduler:
         raise HTTPException(503, "DockerScheduler 未初始化")
@@ -211,7 +291,7 @@ async def start_gateway(profile: str):
     raise HTTPException(500, "启动失败")
 
 
-@app.post("/api/v1/gateway/{profile}/stop")
+@admin_app.post("/api/v1/gateway/{profile}/stop")
 async def stop_gateway(profile: str):
     if not scheduler:
         raise HTTPException(503, "DockerScheduler 未初始化")
@@ -222,7 +302,7 @@ async def stop_gateway(profile: str):
     raise HTTPException(500, "停止失败")
 
 
-@app.post("/api/v1/gateway/{profile}/restart")
+@admin_app.post("/api/v1/gateway/{profile}/restart")
 async def restart_gateway(profile: str):
     if not scheduler:
         raise HTTPException(503, "DockerScheduler 未初始化")
@@ -233,7 +313,7 @@ async def restart_gateway(profile: str):
     raise HTTPException(500, "重启失败")
 
 
-@app.get("/api/v1/gateway/{profile}/logs")
+@admin_app.get("/api/v1/gateway/{profile}/logs")
 async def get_gateway_logs(profile: str, tail: int = 50):
     if not scheduler:
         raise HTTPException(503, "DockerScheduler 未初始化")
@@ -241,7 +321,7 @@ async def get_gateway_logs(profile: str, tail: int = 50):
     return {"profile": profile, "logs": logs}
 
 
-@app.post("/api/v1/pool/sync-models")
+@admin_app.post("/api/v1/pool/sync-models")
 async def sync_models():
     """一键同步模型配置到所有微信用户。"""
     if not scheduler:
@@ -250,10 +330,11 @@ async def sync_models():
     return {"synced": count, "message": msg}
 
 
-@app.get("/health")
-async def health():
+@admin_app.get("/health")
+async def admin_health():
     container_count = scheduler.list_containers() if scheduler else []
     return {
+        "service": "pool-admin",
         "status": "ok",
         "version": "3.0.0",
         "pool_stats": state.get_stats(),
@@ -262,83 +343,124 @@ async def health():
 
 
 # ═════════════════════════════════════════════════════════════════════
-# 后台任务
+# LLM Proxy 应用（proxy_app）
+# ═════════════════════════════════════════════════════════════════════
+
+proxy_app.include_router(llm_proxy.chat_only_router)
+
+
+@proxy_app.get("/health")
+async def proxy_health():
+    return {
+        "service": "pool-proxy",
+        "status": "ok",
+        "version": "3.0.0",
+    }
+
+
+# ═════════════════════════════════════════════════════════════════════
+# 启动逻辑（按 mode 分别初始化）
 # ═════════════════════════════════════════════════════════════════════
 
 
-@app.on_event("startup")
-async def startup():
+async def _start_bind():
+    """初始化绑定服务（热池 + DockerScheduler + 状态管理）。"""
     global hot_pool, pool_task, scheduler, health_task
 
     prefix = config.get("pool", {}).get("profile_prefix", "weixin-")
     total = config.get("pool", {}).get("total_profiles", 100)
 
-    # 加载历史状态
     state.load()
-
-    # ── 初始化 DockerScheduler ──
     scheduler = ds.DockerScheduler(config)
     gm.set_scheduler(scheduler)
-
-    # 确保 Docker 网络和镜像
     scheduler.ensure_network()
     if not scheduler.ensure_image():
         logger.warning("hermes-bot 镜像不存在！请先构建: docker build -f Dockerfile.bot -t hermes-bot:latest .")
 
-    # ── 初始化 profile 列表（按编号生成）──
-    profile_names = []
-    for i in range(1, total + 1):
-        profile = f"{prefix}{i:03d}"
-        profile_names.append(profile)
+    profile_names = [f"{prefix}{i:03d}" for i in range(1, total + 1)]
     state.init_profiles(profile_names)
-
-    # 重置过期热池状态
     for name in list(state.profiles.keys()):
         ps = state.profiles[name]
         if ps.get("status") in ("in_hot_pool", "qr_failed"):
             state.mark_available(name)
     logger.info("池状态已初始化，共 %d 个槽位", len(profile_names))
 
-    # 启动 LLM Proxy
-    llm_proxy.init_proxy()
-    logger.info("LLM Proxy 就绪")
-
-    # 启动热池
     hot_pool = HotPool(config, state, pm, gm)
     pool_task = asyncio.create_task(hot_pool.start())
 
-    # 启动 Docker 健康检查循环
     health_interval = config.get("gateway", {}).get("health_check_interval", 60)
     max_restarts = config.get("gateway", {}).get("max_restart_attempts", 3)
     health_task = asyncio.create_task(scheduler.health_check_loop(
-        interval=health_interval,
-        max_restarts=max_restarts,
+        interval=health_interval, max_restarts=max_restarts,
     ))
 
-    logger.info("Pool Manager v3 (Docker 模式) 启动完成")
+    logger.info("Bind 服务启动完成")
 
 
-@app.on_event("shutdown")
-async def shutdown():
-    if hot_pool:
-        await hot_pool.stop()
-        if pool_task:
-            pool_task.cancel()
-    if health_task:
-        health_task.cancel()
-    if scheduler:
-        scheduler.close()
-    state.save()
-    logger.info("Pool Manager 已关闭")
+async def _start_admin():
+    """初始化管理服务（状态 + DockerScheduler + AdminToken）。"""
+    global scheduler
+
+    state.load()
+    scheduler = ds.DockerScheduler(config)
+    gm.set_scheduler(scheduler)
+    init_admin_token()
+    logger.info("Admin 服务启动完成")
+
+
+async def _start_proxy():
+    """初始化 LLM Proxy 服务。"""
+    llm_proxy.init_proxy()
+    logger.info("Proxy 服务启动完成")
+
+
+def _setup_lifespan(app_obj, mode):
+    """为指定 mode 的应用设置生命周期事件。"""
+
+    @app_obj.on_event("startup")
+    async def startup():
+        if mode == "bind":
+            await _start_bind()
+        elif mode == "admin":
+            await _start_admin()
+        elif mode == "proxy":
+            await _start_proxy()
+
+    @app_obj.on_event("shutdown")
+    async def shutdown():
+        if mode == "bind":
+            if hot_pool:
+                await hot_pool.stop()
+                if pool_task:
+                    pool_task.cancel()
+            if health_task:
+                health_task.cancel()
+            if scheduler:
+                scheduler.close()
+            state.save()
+        elif mode == "admin":
+            state.save()
+            if scheduler:
+                scheduler.close()
+        logger.info("%s 服务已关闭", mode)
 
 
 # ═════════════════════════════════════════════════════════════════════
 # CLI 入口
 # ═════════════════════════════════════════════════════════════════════
 
+APP_MAP = {
+    "bind": bind_app,
+    "admin": admin_app,
+    "proxy": proxy_app,
+}
+
 
 def main():
-    parser = argparse.ArgumentParser(description="WeChat Gateway Pool Manager (Docker)")
+    parser = argparse.ArgumentParser(description="WeChat Gateway Pool Manager")
+    parser.add_argument("--mode", type=str, default="bind",
+                        choices=["bind", "admin", "proxy"],
+                        help="启动模式: bind=绑定页, admin=管理, proxy=LLM代理")
     parser.add_argument("--config", default=os.path.expanduser("~/.hermes/wechat-pool/config.yaml"),
                         help="配置文件路径")
     parser.add_argument("--total", type=int, default=None, help="槽位总数")
@@ -367,12 +489,19 @@ def main():
     logging.getLogger().addHandler(fh)
     logging.getLogger().setLevel(config.get("logging", {}).get("level", "INFO"))
 
-    host = args.host or config.get("frontend", {}).get("host", "0.0.0.0")
-    port = args.port or config.get("frontend", {}).get("api_port", 8765)
+    mode = args.mode
+    app_obj = APP_MAP[mode]
+    _setup_lifespan(app_obj, mode)
 
-    logger.info("启动 Pool Manager v3 (Docker 模式): host=%s port=%d", host, port)
+    # mode 默认端口和 host
+    ports = {"bind": 8765, "admin": 8766, "proxy": 8767}
+    hosts = {"bind": "0.0.0.0", "admin": "0.0.0.0", "proxy": "0.0.0.0"}
 
-    uvicorn.run(app, host=host, port=port,
+    host = args.host or hosts[mode]
+    port = args.port or ports[mode]
+
+    logger.info("启动 [%s] 服务: %s:%d", mode, host, port)
+    uvicorn.run(app_obj, host=host, port=port,
                 log_level=config.get("logging", {}).get("level", "info").lower())
 
 

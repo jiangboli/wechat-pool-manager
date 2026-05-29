@@ -1,21 +1,18 @@
 services:
-  # ── Pool Manager ──────────────────────────────────────────────
-  # 负责扫码绑定、Docker 调度、LLM 代理负载均衡
-  pool-manager:
+  # ── 绑定页服务 ──────────────────────────────────────────────
+  # 对外公开：二维码、绑定页、热池状态轮询
+  pool-bind:
     build:
       context: .
       dockerfile: Dockerfile.pool
     image: pool-manager:latest
-    container_name: pool-manager
+    container_name: pool-bind
+    command: ["--mode", "bind", "--config", "/app/config.yaml"]
     ports:
       - "8765:8765"
     volumes:
-      # Docker 套接字 — 让 pool manager 创建/管理其他容器
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      # 数据目录 — 持久化微信凭证和 Hermes 配置
       - /home/dosh/data:/home/data
-      # 配置挂载（方便外部修改 config.yaml）
-      - ./config.yaml:/app/config.yaml:ro
     networks:
       - hermes-pool-net
     restart: unless-stopped
@@ -24,11 +21,56 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 10s
+
+  # ── 管理端服务 ──────────────────────────────────────────────
+  # 仅 127.0.0.1 可访问 + Token 认证
+  # 用于 gateway 管理、proxy key 管理、状态查询
+  pool-admin:
+    image: pool-manager:latest
+    container_name: pool-admin
+    command: ["--mode", "admin", "--config", "/app/config.yaml"]
+    ports:
+      - "127.0.0.1:8766:8766"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /home/dosh/data:/home/data
+    networks:
+      - hermes-pool-net
+    restart: unless-stopped
+    environment:
+      # 不设置则首次启动自动生成随机 token，写入 /home/dosh/data/pool-manager/admin_token
+      - ADMIN_TOKEN=
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8766/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # ── LLM Proxy 服务 ──────────────────────────────────────────
+  # 仅 /v1/chat/completions，给 bot 容器使用
+  pool-proxy:
+    image: pool-manager:latest
+    container_name: pool-proxy
+    command: ["--mode", "proxy", "--config", "/app/config.yaml"]
+    ports:
+      - "8767:8767"
+    volumes:
+      - /home/dosh/data:/home/data
+    networks:
+      - hermes-pool-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8767/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
       start_period: 5s
 
 # ── 共享网络 ────────────────────────────────────────────────────
-# hermes-wxNNN 容器也加入此网络，通过 DNS 名 "pool-manager" 访问 LLM Proxy
+# hermes-weixin-NNN 容器也加入此网络，通过 DNS 名 "pool-proxy" 访问 LLM Proxy
 networks:
   hermes-pool-net:
     name: hermes-pool-net
-    driver: bridge
+    external: true

@@ -363,6 +363,25 @@ async def proxy_chat_completions(request: Request):
     return await _do_proxy(request, body)
 
 
+# ── 仅聊天代理路由（给 bot 容器用，不含管理 API）──
+
+chat_only_router = APIRouter()
+
+
+@chat_only_router.post("/v1/chat/completions")
+async def proxy_chat_completions_only(request: Request):
+    """转发 LLM 请求——只有聊天补全，不含 keys/status 管理路由。"""
+    try:
+        body = await request.json()
+    except Exception:
+        return Response(
+            content=json.dumps({"error": "invalid json"}),
+            status_code=400,
+            media_type="application/json",
+        )
+    return await _do_proxy(request, body)
+
+
 # ── 管理 API ────────────────────────────────────────────────────────
 
 
