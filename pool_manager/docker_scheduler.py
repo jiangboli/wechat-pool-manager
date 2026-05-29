@@ -215,6 +215,7 @@ agent:
                 mem_reservation=self.memory_reservation,
                 cpu_shares=self.cpu_shares,
                 cpu_quota=self.cpu_quota,
+                environment={"TZ": "Asia/Shanghai"},
                 volumes={
                                     hdir_host: {
                         "bind": "/home/hermes/.hermes",

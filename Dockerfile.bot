@@ -1,7 +1,12 @@
 FROM python:3.11-slim
 
 # 安装 Hermes Agent + 微信平台依赖
-RUN pip install --no-cache-dir hermes-agent aiohttp cryptography
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata \
+    && pip install --no-cache-dir hermes-agent aiohttp cryptography \
+    && rm -rf /var/lib/apt/lists/*
+
+# 默认时区
+ENV TZ=Asia/Shanghai
 
 # 创建运行用户
 RUN useradd -m --uid 1000 hermes
