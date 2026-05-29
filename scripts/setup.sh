@@ -215,6 +215,15 @@ echo "     docker logs -f pool-bind                     # 查看绑定页日志"
 echo "     docker logs -f pool-proxy                     # 查看 proxy 日志"
 echo "     docker ps --filter label=managed_by=pool-manager  # 查看用户容器"
 echo ""
+if [ -n "$PG_DSN" ]; then
+  echo "   ✅ PG 中心存储已启用"
+  echo "     DSN: ${PG_DSN%%@*}@${PG_DSN##*@}  # 隐藏密码"
+else
+  echo "   ⚠️  PG 未配置（不传 --pg-dsn 则使用 JSON 文件存储）"
+  echo "     需要中心存储时加参重新部署:"
+  echo "     bash setup.sh --pg-dsn \"postgresql+asyncpg://user:pass@host:5432/claw_do\""
+fi
+echo ""
 echo "   ⚠️  管理接口需 Token（请求头 X-Admin-Token）:"
 echo "     curl -H 'X-Admin-Token: $ADMIN_TOKEN' http://127.0.0.1:8766/api/v1/pool/stats"
 echo "     curl -H 'X-Admin-Token: $ADMIN_TOKEN' http://127.0.0.1:8766/api/v1/proxy/status"

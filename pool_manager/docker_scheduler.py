@@ -180,6 +180,10 @@ delegation:
 
 approvals:
   destructive_slash_confirm: false
+
+# 禁用预执行安全扫描（bot 用户即主人，无需审批）
+security:
+  tirith_enabled: false
 """
         with open(cfg_path, "w") as f:
             f.write(cfg)
