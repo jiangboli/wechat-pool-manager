@@ -12,7 +12,7 @@ services:
       - "8765:8765"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /home/dosh/data:/home/data
+      - ${HOME_DATA:-/home/dosh/data}:/home/data
     networks:
       - hermes-pool-net
     restart: unless-stopped
@@ -34,13 +34,13 @@ services:
       - "127.0.0.1:8766:8766"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /home/dosh/data:/home/data
+      - ${HOME_DATA:-/home/dosh/data}:/home/data
     networks:
       - hermes-pool-net
     restart: unless-stopped
     environment:
-      # 不设置则首次启动自动生成随机 token，写入 /home/dosh/data/pool-manager/admin_token
-      - ADMIN_TOKEN=
+      # 不设置则首次启动自动生成随机 token，写入 $HOME_DATA/pool-manager/admin_token
+      ADMIN_TOKEN: "${ADMIN_TOKEN}"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8766/health')"]
       interval: 30s
@@ -57,7 +57,7 @@ services:
     ports:
       - "8767:8767"
     volumes:
-      - /home/dosh/data:/home/data
+      - ${HOME_DATA:-/home/dosh/data}:/home/data
     networks:
       - hermes-pool-net
     restart: unless-stopped
