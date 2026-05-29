@@ -163,6 +163,12 @@ docker run -d \
   --restart unless-stopped \
   pool-manager:latest
 
+# ── 修复数据目录权限（Docker root → 宿主机用户）──
+echo "[5.5/5] 🔧 修复数据目录权限..."
+sleep 2
+sudo chown -R "$(whoami):$(whoami)" "$DATA_ROOT" 2>/dev/null || echo "  提示：数据目录文件归 root 所有，可手动运行: sudo chown -R $(whoami):$(whoami) $DATA_ROOT"
+echo "  数据目录权限已修复"
+
 echo ""
 echo "══════════════════════════════════════════════════"
 echo "   ✅ 部署完成！"
