@@ -107,13 +107,26 @@ class DockerScheduler:
 
     # ── 数据目录 ────────────────────────────────────────────────
 
+    def _chown_recursive_up(self, path: str, uid: int = 1000):
+        """递归向上 chown 父目录，直到 data_root 边界。"""
+        path = os.path.normpath(path)
+        root = os.path.normpath(self.data_root)
+        while path.startswith(root) and path != root:
+            try:
+                os.chown(path, uid, -1)
+            except PermissionError:
+                break
+            path = os.path.dirname(path)
+
     def ensure_data_dir(self, profile: str) -> str:
         """确保 profile 的数据目录存在并返回 hermes 目录路径。"""
         hdir = _hermes_dir(profile, self.data_root)
         os.makedirs(hdir, exist_ok=True)
         # 容器内的 hermes 用户 (UID 1000) 需要写 .hermes/logs/ .hermes/sessions.db
         # chown 到 UID 1000 让容器内 hermes 用户可正常写入，不开放权限给其他人
-        os.chown(hdir, 1000, -1)  # 只改 owner，不改 group
+        os.chown(hdir, 1000, -1)
+        # 父目录也改 owner，方便宿主机用户直接编辑
+        self._chown_recursive_up(hdir, uid=1000)
         return hdir
 
     def write_env(self, profile: str, credentials: dict):
@@ -127,6 +140,7 @@ class DockerScheduler:
             f.write(f"WEIXIN_ALLOW_ALL_USERS=true\n")
             f.write(f"WEIXIN_HOME_CHANNEL={credentials.get('user_id', '')}\n")
         logger.info("[%s] 凭证已写入 %s", profile, env_path)
+        os.chown(env_path, 1000, -1)
 
     def write_config(self, profile: str, proxy_host: str = "pool-manager", proxy_port: int = 8765):
         """写入容器 ~/.hermes/config.yaml。
@@ -170,6 +184,7 @@ approvals:
         with open(cfg_path, "w") as f:
             f.write(cfg)
         logger.info("[%s] 配置文件已写入 %s", profile, cfg_path)
+        os.chown(cfg_path, 1000, -1)
 
     # ── 容器生命周期 ────────────────────────────────────────────
 
