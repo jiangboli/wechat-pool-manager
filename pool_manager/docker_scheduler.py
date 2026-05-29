@@ -159,6 +159,13 @@ custom_providers:
 
 agent:
   auto_send_tool_results: true
+
+# 自动审批——无需用户手动 approve
+delegation:
+  subagent_auto_approve: true
+
+approvals:
+  destructive_slash_confirm: false
 """
         with open(cfg_path, "w") as f:
             f.write(cfg)
