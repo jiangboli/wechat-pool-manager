@@ -26,6 +26,7 @@ PREFIX="weixin-"
 HOST="0.0.0.0"
 ADMIN_TOKEN=""
 PG_DSN=""
+MACHINE_IP=""
 
 # ── 参数解析 ──────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -38,6 +39,7 @@ while [[ $# -gt 0 ]]; do
     --host)        HOST="$2";       shift 2 ;;
     --admin-token) ADMIN_TOKEN="$2"; shift 2 ;;
     --pg-dsn)     PG_DSN="$2";       shift 2 ;;
+    --machine-ip) MACHINE_IP="$2";   shift 2 ;;
     --help|-h)
       echo "用法: bash setup.sh [选项]"
       echo ""
@@ -72,6 +74,15 @@ echo "  port:           $PORT"
 echo "  prefix:         $PREFIX"
 echo "  host:           $HOST"
 echo ""
+
+# ── 自动检测 MACHINE_IP ─────────────────────────────────────────────
+if [ -z "$MACHINE_IP" ]; then
+  MACHINE_IP=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "")
+  if [ -z "$MACHINE_IP" ]; then
+    MACHINE_IP="auto"
+  fi
+fi
+echo "  machine_ip:     $MACHINE_IP"
 
 # ── 检查 Docker ──────────────────────────────────────────────────────────
 echo "[1/6] 🐳 检查 Docker..."
@@ -159,8 +170,9 @@ cat > "$PROJECT_DIR/.env" << ENVEOF
 ADMIN_TOKEN=$ADMIN_TOKEN
 HOME_DATA=$DATA_ROOT
 CLAW_DO_DSN=$PG_DSN
+MACHINE_IP=$MACHINE_IP
 ENVEOF
-echo "  .env 已生成 (包含 ADMIN_TOKEN + HOME_DATA + CLAW_DO_DSN)"
+echo "  .env 已生成 (包含 ADMIN_TOKEN + HOME_DATA + CLAW_DO_DSN + MACHINE_IP)"
 
 # ── 构建 Docker 镜像 ──────────────────────────────────────────────────────
 echo "[3/6] 🔨 构建 Docker 镜像..."

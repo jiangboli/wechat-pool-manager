@@ -12,6 +12,7 @@ services:
       - "8765:8765"
     environment:
       CLAW_DO_DSN: "${CLAW_DO_DSN}"
+      MACHINE_IP: "${MACHINE_IP:-auto}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${HOME_DATA:-/home/dosh/data}:/home/data
@@ -43,6 +44,7 @@ services:
     environment:
       ADMIN_TOKEN: "${ADMIN_TOKEN}"
       CLAW_DO_DSN: "${CLAW_DO_DSN}"
+      MACHINE_IP: "${MACHINE_IP:-auto}"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8766/health')"]
       interval: 30s

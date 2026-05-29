@@ -24,18 +24,27 @@ _MACHINE_HOSTNAME = ""
 
 
 def _detect_machine_info():
-    """自动检测本机 IP 和主机名。"""
+    """自动检测本机 IP 和主机名。
+    
+    优先级: MACHINE_IP 环境变量 > socket 探测 > "unknown"
+    在 Docker 容器内 socket 探测会返回容器内部 IP（如 172.18.0.x），
+    可通过环境变量 MACHINE_IP 覆盖为宿主机真实 IP。
+    """
     global _MACHINE_IP, _MACHINE_HOSTNAME
     _MACHINE_HOSTNAME = socket.gethostname()
-    try:
-        # 取第一个非 127.0.0.1 的 IP
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.settimeout(0)
-        s.connect(("10.254.254.254", 1))
-        _MACHINE_IP = s.getsockname()[0]
-        s.close()
-    except Exception:
-        _MACHINE_IP = os.environ.get("MACHINE_IP", "unknown")
+    
+    # 优先环境变量（Docker 部署用）
+    _MACHINE_IP = os.environ.get("MACHINE_IP", "")
+    if not _MACHINE_IP:
+        try:
+            # 取第一个非 127.0.0.1 的 IP
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(0)
+            s.connect(("10.254.254.254", 1))
+            _MACHINE_IP = s.getsockname()[0]
+            s.close()
+        except Exception:
+            _MACHINE_IP = "unknown"
     logger.info("本机信息: IP=%s hostname=%s", _MACHINE_IP, _MACHINE_HOSTNAME)
 
 
