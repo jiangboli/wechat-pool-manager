@@ -164,6 +164,21 @@ agent:
             f.write(cfg)
         logger.info("[%s] 配置文件已写入 %s", profile, cfg_path)
 
+    def write_soul(self, profile: str):
+        """写入容器 ~/.hermes/SOUL.md（agent 身份/人格定义）。"""
+        hdir = self.ensure_data_dir(profile)
+        soul_path = os.path.join(hdir, "SOUL.md")
+        name = self.config.get("agent", {}).get("name", "Claw DO")
+        content = f"""You are {name}, a friendly WeChat assistant living inside Hermes Agent.
+You help users with their requests in a warm, playful tone.
+Keep responses concise and helpful.
+
+Your identity: {name}
+"""
+        with open(soul_path, "w") as f:
+            f.write(content)
+        logger.info("[%s] SOUL.md 已写入 %s", profile, soul_path)
+
     # ── 容器生命周期 ────────────────────────────────────────────
 
     def create_container(self, profile: str, credentials: Optional[dict] = None) -> bool:
@@ -199,6 +214,7 @@ agent:
         if credentials:
             self.write_env(profile, credentials)
         self.write_config(profile)
+        self.write_soul(profile)
 
         # 计算宿主机路径（给 Docker API 挂载用）
         hdir_host = _hermes_dir(profile, self.data_root_host)
