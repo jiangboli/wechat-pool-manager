@@ -134,11 +134,11 @@ class DockerScheduler:
         hdir = self.ensure_data_dir(profile)
         env_path = os.path.join(hdir, ".env")
         with open(env_path, "w") as f:
-            f.write(f"WEIXIN_ACCOUNT_ID={credentials.get(account_id, )}\n")
-            f.write(f"WEIXIN_TOKEN={credentials.get(token, )}\n")
-            f.write(f"WEIXIN_BASE_URL={credentials.get(base_url, )}\n")
+            f.write(f"WEIXIN_ACCOUNT_ID={credentials.get('account_id', '')}\n")
+            f.write(f"WEIXIN_TOKEN={credentials.get('token', '')}\n")
+            f.write(f"WEIXIN_BASE_URL={credentials.get('base_url', '')}\n")
             f.write(f"WEIXIN_ALLOW_ALL_USERS=true\n")
-            f.write(f"WEIXIN_HOME_CHANNEL={credentials.get(user_id, )}\n")
+            f.write(f"WEIXIN_HOME_CHANNEL={credentials.get('user_id', '')}\n")
         logger.info("[%s] 凭证已写入 %s", profile, env_path)
         os.chown(env_path, 1000, -1)
 
