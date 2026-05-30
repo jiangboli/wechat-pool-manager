@@ -1,8 +1,12 @@
 FROM python:3.11-slim
 
-# 安装 Hermes Agent + 微信平台依赖
-RUN apt-get update && apt-get install -y --no-install-recommends tzdata \
-    && pip install --no-cache-dir hermes-agent aiohttp cryptography \
+# 安装系统依赖（curl+Node.js 避免 Hermes 启动时阻塞安装 + websockets 是 Hermes 必需依赖）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tzdata curl ca-certificates gnupg \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && pip install --no-cache-dir hermes-agent aiohttp cryptography websockets \
     && rm -rf /var/lib/apt/lists/*
 
 # 默认时区
