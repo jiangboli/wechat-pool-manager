@@ -60,6 +60,9 @@ services:
     command: ["--mode", "proxy", "--config", "/app/config.yaml"]
     ports:
       - "8767:8767"
+    environment:
+      CLAW_DO_DSN: "${CLAW_DO_DSN}"
+      MACHINE_IP: "${MACHINE_IP:-auto}"
     volumes:
       - ${HOME_DATA:-/home/dosh/data}:/home/data
     networks:

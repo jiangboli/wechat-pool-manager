@@ -30,6 +30,8 @@ DONE_MARKER = b"data: [DONE]\n\n"
 
 _credential_pool: Dict[str, list] = {}       # provider → [key_info, ...]
 _pool_index: Dict[str, int] = {}              # provider → 当前 round_robin 索引
+_pg_store: Optional[object] = None            # PG 存储实例（可选）
+_refresh_task: Optional[asyncio.Task] = None  # 后台刷新任务
 _stats: Dict[str, dict] = {}                  # provider → 统计
 _circuit_breakers: Dict[str, dict] = {}       # key_id → 熔断状态
 
@@ -44,11 +46,23 @@ _config = {
 # ── 凭证管理 ────────────────────────────────────────────────────────
 
 
-def init_proxy(proxy_config: dict = None):
-    """初始化 proxy（从 auth.json 加载初始凭证池）。"""
+def init_proxy(proxy_config: dict = None, pg_store=None):
+    """初始化 proxy。
+
+    Args:
+        proxy_config: 可选配置 dict
+        pg_store: PgStore 实例（启用时从 PG 加载，否则回退 auth.json）
+    """
+    global _pg_store
     if proxy_config:
         _config.update(proxy_config)
-    _load_from_auth_json()
+    _pg_store = pg_store
+
+    if pg_store and pg_store.enabled:
+        logger.info("LLM Proxy: 使用 PG 凭证池（启动后异步加载）")
+    else:
+        _load_from_auth_json()
+
     logger.info("LLM Proxy v3 就绪: %d 个 provider", len(_credential_pool))
     for provider, keys in _credential_pool.items():
         logger.info("  %s: %d keys", provider, len(keys))
@@ -76,8 +90,96 @@ def _load_from_auth_json():
         logger.error("读取 auth.json 失败: %s", e)
 
 
+# ── PG 凭证池 ──────────────────────────────────────────────────────
+
+
+async def load_from_pg():
+    """从 PG 加载本机所有 API Key 到内存（启动时调用）。"""
+    if not _pg_store or not _pg_store.enabled:
+        return
+    try:
+        keys = await _pg_store.load_api_keys()
+        _credential_pool.clear()
+        _pool_index.clear()
+        for k in keys:
+            key_info = {
+                "access_token": k["access_token"],
+                "label": k.get("label", ""),
+                "_pg_id": k["id"],
+            }
+            _add_key_internal(k["provider"], key_info, persist=False)
+        logger.info("从 PG 加载 %d 个 API Key", len(keys))
+    except Exception as e:
+        logger.warning("从 PG 加载 API Key 失败: %s", e)
+
+
+async def refresh_loop(interval: int = 30):
+    """后台定时从 PG 刷新凭证池（新增/删除同步）。
+
+    Args:
+        interval: 刷新间隔秒数（默认 30）
+    """
+    logger.info("凭证池后台刷新已启动 (interval=%ds)", interval)
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            await _sync_pg_to_memory()
+        except Exception as e:
+            logger.warning("凭证池刷新失败: %s", e)
+
+
+async def _sync_pg_to_memory():
+    """PG → 内存增量同步。
+
+    新增的 key 自动加入，已删除的 key 自动移除，未变动的保留（熔断状态不丢）。
+    """
+    pg_keys = await _pg_store.load_api_keys()
+    pg_id_set = {k["id"] for k in pg_keys}
+
+    # 收集当前内存中的 PG key ID
+    mem_pg_ids = set()
+    for provider, keys in _credential_pool.items():
+        for k in keys:
+            pid = k.get("_pg_id")
+            if pid is not None:
+                mem_pg_ids.add(pid)
+
+    # 新增: PG 有但内存没有
+    new_keys = [k for k in pg_keys if k["id"] not in mem_pg_ids]
+    for nk in new_keys:
+        key_info = {
+            "access_token": nk["access_token"],
+            "label": nk.get("label", ""),
+            "_pg_id": nk["id"],
+        }
+        _add_key_internal(nk["provider"], key_info, persist=False)
+        logger.info("[sync] 新增 key: provider=%s pg_id=%d", nk["provider"], nk["id"])
+
+    # 删除: 内存有但 PG 没有
+    removed_ids = mem_pg_ids - pg_id_set
+    if removed_ids:
+        for provider in list(_credential_pool.keys()):
+            keys = _credential_pool[provider]
+            remaining = [k for k in keys if k.get("_pg_id") not in removed_ids]
+            for removed in keys:
+                if removed.get("_pg_id") in removed_ids:
+                    logger.info("[sync] 删除 key: provider=%s pg_id=%s",
+                                provider, removed.get("_pg_id"))
+            if remaining:
+                _credential_pool[provider] = remaining
+            else:
+                del _credential_pool[provider]
+                _pool_index.pop(provider, None)
+
+
 def _save_credential_pool():
-    """将当前凭证池写入 auth.json（volume 挂载路径，持久化）。"""
+    """将当前凭证池写入持久化存储。
+
+    PG 启用时每步操作已直接写入 PG，此函数不做额外操作。
+    无 PG 时回退 auth.json 写入。
+    """
+    if _pg_store and _pg_store.enabled:
+        return  # PG 模式：每步操作已独立写入 PG
     try:
         auth_path = _auth_json_path()
         os.makedirs(os.path.dirname(auth_path), exist_ok=True)
@@ -94,8 +196,14 @@ def _save_credential_pool():
         logger.error("[proxy] 持久化凭证池失败: %s", e)
 
 
-def _add_key_internal(provider: str, key_info: dict) -> str:
-    """内部添加 key，返回 key_id。"""
+def _add_key_internal(provider: str, key_info: dict, persist: bool = True) -> str:
+    """内部添加 key，返回 key_id。
+
+    Args:
+        provider: provider 名
+        key_info: key 信息 dict
+        persist: 是否持久化到存储（启动加载时传 False，管理 API 调用时传 True）
+    """
     if provider not in _credential_pool:
         _credential_pool[provider] = []
         _pool_index[provider] = 0
@@ -107,7 +215,8 @@ def _add_key_internal(provider: str, key_info: dict) -> str:
     key_info["_error_count"] = 0
     _credential_pool[provider].append(key_info)
     logger.info("[proxy] 添加 key: provider=%s label=%s id=%s", provider, key_info.get("label", ""), key_id)
-    _save_credential_pool()  # 自动持久化到 volume
+    if persist:
+        _save_credential_pool()  # 自动持久化
     return key_id
 
 
@@ -391,6 +500,8 @@ async def add_key(request: Request):
 
     Body:
         {"provider": "deepseek", "key": "sk-xxx", "label": "主key-1"}
+
+    有 PG 时同时持久化到 PG，仅 auth.json 回退时写文件。
     """
     try:
         data = await request.json()
@@ -412,10 +523,22 @@ async def add_key(request: Request):
             media_type="application/json",
         )
 
+    # 写入内存
     key_id = _add_key_internal(provider, {
         "access_token": api_key,
         "label": label or f"{provider}-key",
     })
+
+    # 写入 PG（如启用）
+    if _pg_store and _pg_store.enabled:
+        pg_id = await _pg_store.create_api_key(provider, api_key, label)
+        if pg_id:
+            # 标记内存中的 key 有 PG id，后续刷新可识别
+            for keys in _credential_pool.values():
+                for k in keys:
+                    if k.get("_key_id") == key_id:
+                        k["_pg_id"] = pg_id
+                        break
 
     return {
         "success": True,
@@ -427,7 +550,11 @@ async def add_key(request: Request):
 
 @router.delete("/api/v1/proxy/keys/{key_id}")
 async def delete_key(key_id: str):
-    """删除 API key。"""
+    """删除 API key。
+
+    同时删除 PG 记录（如启用）和内存中的 key。
+    """
+    # 先删内存
     ok = _remove_key_internal(key_id)
     if not ok:
         return Response(
@@ -435,6 +562,15 @@ async def delete_key(key_id: str):
             status_code=404,
             media_type="application/json",
         )
+
+    # 尝试按 PG id 删除（key_id 可能是 _pg_id 或 _key_id）
+    if _pg_store and _pg_store.enabled:
+        try:
+            pg_id = int(key_id.split("_")[-1]) if "_" in key_id else int(key_id)
+            await _pg_store.delete_api_key(pg_id)
+        except (ValueError, TypeError):
+            pass
+
     return {"success": True, "message": f"Key {key_id} 已删除"}
 
 

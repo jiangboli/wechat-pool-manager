@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy import select, update, delete, text
 from sqlalchemy.exc import OperationalError
 
-from .models import Base, Machine, Binding, DockerContainer, QrHistory, GatewayHealthLog
+from .models import Base, Machine, Binding, DockerContainer, QrHistory, GatewayHealthLog, ApiKey
 
 logger = logging.getLogger("pool_manager.pg_store")
 
@@ -427,6 +427,79 @@ class PgStore:
                     await session.commit()
         except Exception as e:
             logger.warning("更新心跳失败: %s", e)
+
+    # ── API Key 管理 ────────────────────────────────────────────────
+
+    async def load_api_keys(self) -> list[dict]:
+        """加载本机的所有有效 API Key（启动时 + 定时刷新用）。"""
+        if not self._enabled:
+            return []
+        try:
+            async with self._session() as session:
+                stmt = select(ApiKey).where(
+                    ApiKey.machine_ip == _MACHINE_IP,
+                    ApiKey.is_active == 1,
+                )
+                result = await session.execute(stmt)
+                keys = result.scalars().all()
+                return [
+                    {
+                        "id": k.id,
+                        "provider": k.provider,
+                        "access_token": k.access_token,
+                        "label": k.label or "",
+                    }
+                    for k in keys
+                ]
+        except Exception as e:
+            logger.warning("加载 API Key 失败: %s", e)
+            return []
+
+    async def create_api_key(self, provider: str, access_token: str,
+                               label: str = "") -> Optional[int]:
+        """创建 API Key 记录，返回 id。"""
+        if not self._enabled:
+            return None
+        try:
+            async with self._session() as session:
+                key = ApiKey(
+                    provider=provider,
+                    access_token=access_token,
+                    label=label or "",
+                    machine_ip=_MACHINE_IP,
+                    is_active=1,
+                )
+                session.add(key)
+                await session.commit()
+                logger.info("API Key 已创建: provider=%s label=%s id=%d",
+                            provider, label or "(未命名)", key.id)
+                return key.id
+        except Exception as e:
+            logger.warning("创建 API Key 失败: %s", e)
+            return None
+
+    async def delete_api_key(self, key_id: int) -> bool:
+        """软删除 API Key（is_active=0）。"""
+        if not self._enabled:
+            return False
+        try:
+            async with self._session() as session:
+                stmt = select(ApiKey).where(
+                    ApiKey.id == key_id,
+                    ApiKey.machine_ip == _MACHINE_IP,
+                )
+                result = await session.execute(stmt)
+                key = result.scalar_one_or_none()
+                if not key:
+                    return False
+                key.is_active = 0
+                key.updated_at = datetime.now(timezone.utc)
+                await session.commit()
+                logger.info("API Key 已删除: id=%d provider=%s", key_id, key.provider)
+                return True
+        except Exception as e:
+            logger.warning("删除 API Key 失败: %s", e)
+            return False
 
 
 # ── 全局单例 ──────────────────────────────────────────────────────
