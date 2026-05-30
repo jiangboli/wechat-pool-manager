@@ -194,6 +194,13 @@ security:
             f.write(cfg)
         logger.info("[%s] 配置文件已写入 %s", profile, cfg_path)
         os.chown(cfg_path, 1000, -1)
+        # 写入 .managed 标记——防止 Hermes 自动重写 config.yaml
+        managed_path = os.path.join(hdir, ".managed")
+        if not os.path.exists(managed_path):
+            with open(managed_path, "w") as f:
+                f.write("managed by pool-manager\n")
+            os.chown(managed_path, 1000, -1)
+            logger.info("[%s] .managed 标记已创建", profile)
 
     def write_soul(self, profile: str, lobster_name: str = ""):
         """写入容器 ~/.hermes/SOUL.md（agent 身份/人格定义）。"""
