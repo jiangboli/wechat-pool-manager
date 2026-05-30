@@ -26,6 +26,17 @@ logger = logging.getLogger("pool_manager.proxy")
 # OpenAI 兼容的流式响应结束标记
 DONE_MARKER = b"data: [DONE]\n\n"
 
+# 共享 HTTPX 客户端（连接池 + keepalive）
+_http_client: Optional[httpx.AsyncClient] = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None:
+        limits = httpx.Limits(max_keepalive_connections=20, max_connections=50)
+        _http_client = httpx.AsyncClient(timeout=httpx.Timeout(300.0, read=120.0), limits=limits)
+    return _http_client
+
 # ── 凭证池（内存） ───────────────────────────────────────────────────
 
 _credential_pool: Dict[str, list] = {}       # provider → [key_info, ...]
@@ -364,9 +375,8 @@ async def _do_proxy(request: Request, body: dict) -> Response:
                 headers[h] = request.headers[h]
 
         stream = body.get("stream", False)
-        client = None
         try:
-            client = httpx.AsyncClient(timeout=300)
+            client = _get_client()
             if stream:
                 result = await _proxy_stream(client, target_url, body, headers)
                 # 记录成功
@@ -375,17 +385,11 @@ async def _do_proxy(request: Request, body: dict) -> Response:
             else:
                 result = await _proxy_sync(client, target_url, body, headers)
                 _record_success(provider)
-                await client.aclose()
                 return result
         except Exception as e:
             logger.warning("[proxy] provider=%s 转发失败: %s", provider, e)
             _record_error_for_provider(provider)
             last_error = e
-            if client:
-                try:
-                    await client.aclose()
-                except Exception:
-                    pass
             continue
 
     # 所有 provider 都失败
@@ -428,8 +432,6 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n".encode()
             yield DONE_MARKER
-        finally:
-            await client.aclose()
     return StreamingResponse(
         generate(),
         media_type="text/event-stream",
