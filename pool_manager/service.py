@@ -437,6 +437,7 @@ async def _start_bind():
 
     # ── PG 持久化初始化 ──────────────────────────────────────────
     await pg_store.connect()
+    llm_proxy.init_proxy(pg_store=pg_store if pg_store.enabled else None)
     if pg_store.enabled:
         try:
             containers = scheduler.list_containers()
@@ -468,6 +469,7 @@ async def _start_admin():
     gm.set_scheduler(scheduler)
     init_admin_token()
     await pg_store.connect()
+    llm_proxy.init_proxy(pg_store=pg_store if pg_store.enabled else None)
     logger.info("Admin 服务启动完成")
 
 
