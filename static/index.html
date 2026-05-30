@@ -519,7 +519,7 @@
 <div class="container">
   <div class="card">
     <!-- Logo -->
-    <img class="logo" src="dosh.png" alt="logo">
+    <img class="logo" src="/static/dosh.png" alt="logo">
     <h1>Just Claw Do It</h1>
     <p class="subtitle">在微信里养一只属于自己的虾</p>
 
@@ -732,7 +732,7 @@ async function submitForm() {
     // 切换到扫码页面
     document.getElementById('pageInfo').classList.remove('active');
     document.getElementById('pageQR').classList.add('active');
-    document.getElementById('lobsterName').textContent = data.lobster_name || '虾';
+    document.getElementById('lobsterName').textContent = document.getElementById('inputUser').value.trim();
 
     showQR(data.qr_url, data.slot_id);
     countdownValue = 50;
