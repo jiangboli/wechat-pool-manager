@@ -108,6 +108,18 @@ async def get_hot_slots():
     }
 
 
+@bind_app.get("/api/v1/bind/check-phone")
+async def check_phone(phone: str = ""):
+    """验证手机号是否已全局绑定。"""
+    if not phone:
+        raise HTTPException(400, "手机号必填")
+    if pg_store.enabled:
+        existing = await pg_store.find_binding_by_phone(phone)
+        if existing:
+            return {"exists": True, "profile_name": existing["profile_name"], "machine_ip": existing["machine_ip"], "bound_at": existing["bound_at"]}
+    return {"exists": False}
+
+
 @bind_app.post("/api/v1/bind/register")
 async def register_binding(req: Request):
     """用户提交信息后，分配二维码槽位。"""
@@ -122,6 +134,11 @@ async def register_binding(req: Request):
     user_name = (body.get("user_name") or "").strip()
     if not phone or not lobster_name or not user_name:
         raise HTTPException(400, "手机号、龙虾名、用户名均为必填项")
+    # 手机号去重检查（全局）
+    if pg_store.enabled:
+        existing = await pg_store.find_binding_by_phone(phone)
+        if existing:
+            raise HTTPException(409, "该手机号已绑定，不能重复绑定")
     # 找可用槽位
     slots = hot_pool.get_all_slots()
     target = None

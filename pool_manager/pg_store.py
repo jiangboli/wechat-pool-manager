@@ -231,7 +231,33 @@ class PgStore:
             logger.warning("查询绑定失败: %s", e)
             return None
 
-    
+    async def find_binding_by_phone(self, phone: str) -> Optional[dict]:
+        """全局查询：该手机号是否已在任何服务器上绑定了。"""
+        if not self._enabled or not phone:
+            return None
+        try:
+            async with self._session() as session:
+                stmt = select(Binding).where(
+                    Binding.phone == phone,
+                    Binding.status == "active",
+                )
+                result = await session.execute(stmt)
+                binding = result.scalar_one_or_none()
+                if binding:
+                    return {
+                        "id": binding.id,
+                        "profile_name": binding.profile_name,
+                        "machine_ip": binding.machine_ip,
+                        "user_id": binding.user_id,
+                        "phone": binding.phone,
+                        "status": binding.status,
+                        "bound_at": str(binding.bound_at) if binding.bound_at else "",
+                    }
+                return None
+        except Exception as e:
+            logger.warning("手机号去重查询失败: %s", e)
+            return None
+
     async def list_bindings(self) -> List[Dict[str, Any]]:
         """列出所有绑定。"""
         if not self._enabled:

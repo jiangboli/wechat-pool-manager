@@ -214,6 +214,26 @@ class HotPool:
             try:
                 success = await slot.run(self._on_confirmed)
                 if success:
+                    phone = (slot.user_info or {}).get("phone", "")
+
+                    # 全局手机号去重：查 PG 是否已有绑定
+                    if phone and pg_store.enabled:
+                        existing = await pg_store.find_binding_by_phone(phone)
+                        if existing:
+                            logger.info("[%s] 手机号 %s 已在 %s 上绑定（profile=%s），复用已有容器",
+                                        profile, phone, existing["machine_ip"], existing["profile_name"])
+                            self.state.mark_bound(profile, slot.user_id or "")
+                            # 更新凭证 + 重启容器
+                            self._scheduler.write_env(existing["profile_name"], {
+                                "account_id": slot.account_id or "",
+                                "token": slot.token or "",
+                                "base_url": slot.bot_base_url or "",
+                            })
+                            self._scheduler.restart_container(existing["profile_name"])
+                            # 记录事件 + 从热池中移除
+                            await pg_store.log_qr_event(profile, "rebind", slot.user_id or "")
+                            return
+
                     self.state.mark_bound(profile, slot.user_id)
                     logger.info("[%s] 绑定完成，创建 Docker 容器", profile)
                     # 创建并启动 Docker 容器
@@ -274,38 +294,15 @@ class HotPool:
         self._tasks[profile] = task
 
     async def _on_confirmed(self, result: dict):
-        """QR 确认回调——创建/重用 Linux 用户 + 写入凭证 + 启动 gateway。"""
+        """QR 确认回调——记录确认信息，实际容器创建在 _run_slot 中处理。"""
         profile = result["profile"]
-        credentials = {
-            "account_id": result["account_id"],
-            "token": result["token"],
-            "base_url": result.get("base_url", ""),
-            "user_id": result.get("user_id", ""),
-        }
-
-        user_id = credentials["user_id"]
-
-        # 去重：同一个微信用户二次扫码 → 复用已有 Docker 容器
-        existing_profile = self.state.get_docker_user_by_user_id(user_id)
-        if existing_profile:
-            logger.info("[%s] 用户 %s 已存在（user_id=%s），更新凭证 + 重启容器",
-                        profile, existing_profile, user_id)
-            ok = self.pm.update_credentials(existing_profile, credentials)
-            if ok:
-                self.state.set_status(profile, "bound_healthy",
-                                      bound_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
-                                      user_id=user_id)
-                self._scheduler.restart_container(existing_profile)
-            else:
-                logger.error("[%s] 更新凭证失败", profile)
-            return
-
-        # 新用户：写入凭证（容器由 _run_slot 创建）
-        ok = self.pm.setup_linux_profile(profile, credentials)
-        if ok:
-            logger.info("[%s] Linux 用户配置完成", profile)
-        else:
-            logger.error("[%s] Linux 用户配置失败！", profile)
+        slot = self.slots.get(profile)
+        if slot:
+            slot.account_id = result.get("account_id", slot.account_id)
+            slot.token = result.get("token", slot.token)
+            slot.bot_base_url = result.get("base_url", slot.bot_base_url)
+            slot.user_id = result.get("user_id", slot.user_id)
+        logger.info("[%s] 扫码确认成功 user_id=%s", profile, result.get("user_id", ""))
 
     def get_slot_qr(self, profile: str) -> Optional[str]:
         slot = self.slots.get(profile)
