@@ -166,7 +166,6 @@ model:
 custom_providers:
   - name: pool-proxy
     base_url: http://{proxy_host}:{proxy_port}/v1
-    api_type: openai
 
 agent:
   auto_send_tool_results: true
