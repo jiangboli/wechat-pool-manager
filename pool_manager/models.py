@@ -92,6 +92,21 @@ class QrHistory(Base):
     resolved_at = Column(DateTime(timezone=True), comment="最终结果时间")
 
 
+class ApiKey(Base):
+    """LLM API Key 池（PG 持久化版本）。"""
+    __tablename__ = "api_keys"
+
+    id = Column(Integer, primary_key=True)
+    provider = Column(String(32), nullable=False, comment="provider 名，如 deepseek")
+    access_token = Column(String(512), nullable=False, comment="API key（明文）")
+    label = Column(String(64), default="", comment="标识/备注")
+    machine_ip = Column(String(45), nullable=False, comment="添加此 key 的服务器 IP")
+    is_active = Column(Integer, default=1, comment="1=有效 0=已删除（软删除）")
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+
 class GatewayHealthLog(Base):
     """网关健康检查日志。"""
     __tablename__ = "gateway_health_log"

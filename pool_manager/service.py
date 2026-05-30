@@ -473,7 +473,12 @@ async def _start_admin():
 
 async def _start_proxy():
     """初始化 LLM Proxy 服务。"""
-    llm_proxy.init_proxy()
+    await pg_store.connect()
+    llm_proxy.init_proxy(pg_store=pg_store if pg_store.enabled else None)
+    if pg_store.enabled:
+        await llm_proxy.load_from_pg()
+        asyncio.create_task(llm_proxy.refresh_loop(interval=30))
+        logger.info("Proxy PG 凭证池已加载，后台刷新已启动 (interval=30s)")
     logger.info("Proxy 服务启动完成")
 
 
