@@ -242,7 +242,7 @@ class PgStore:
                     Binding.status == "active",
                 )
                 result = await session.execute(stmt)
-                binding = result.scalar_one_or_none()
+                binding = result.scalars().first()
                 if binding:
                     return {
                         "id": binding.id,
