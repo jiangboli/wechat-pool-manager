@@ -15,6 +15,7 @@ import logging
 import os
 import random
 import time
+from collections import defaultdict
 from typing import Dict, List, Optional
 
 import httpx
@@ -29,13 +30,60 @@ DONE_MARKER = b"data: [DONE]\n\n"
 # 共享 HTTPX 客户端（连接池 + keepalive）
 _http_client: Optional[httpx.AsyncClient] = None
 
+# 并发控制——最多同时处理 N 个 LLM 请求
+_request_semaphore: Optional[asyncio.Semaphore] = None
+
+# 速率限制——每 IP 每秒/分钟允许的请求数
+_rate_limiter: Dict[str, list] = {}
+RATE_LIMIT_MAX = 5         # 窗口内最大请求数
+RATE_LIMIT_WINDOW = 60     # 窗口秒数
+QUEUE_TIMEOUT = 30         # 排队超时秒数
+MAX_CONCURRENT = 50        # 最大同时处理请求数
+
 
 def _get_client() -> httpx.AsyncClient:
     global _http_client
     if _http_client is None:
-        limits = httpx.Limits(max_keepalive_connections=20, max_connections=50)
-        _http_client = httpx.AsyncClient(timeout=httpx.Timeout(300.0, read=120.0), limits=limits)
+        limits = httpx.Limits(max_keepalive_connections=50, max_connections=200)
+        _http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(300.0, read=120.0),
+            limits=limits,
+        )
     return _http_client
+
+
+def _init_rate_limiter(max_concurrent: int = 50, rate_limit: int = 5):
+    """初始化并发控制和速率限制。"""
+    global _request_semaphore, RATE_LIMIT_MAX, MAX_CONCURRENT
+    MAX_CONCURRENT = max_concurrent
+    RATE_LIMIT_MAX = rate_limit
+    _request_semaphore = asyncio.Semaphore(max_concurrent)
+    logger.info(
+        "速率限制初始化: max_concurrent=%d rate_limit=%d req/%ds",
+        max_concurrent, rate_limit, RATE_LIMIT_WINDOW,
+    )
+
+
+def _check_rate_limit(client_ip: str) -> bool:
+    """检查客户端 IP 是否超过速率限制。"""
+    now = time.time()
+    window = RATE_LIMIT_WINDOW
+
+    # 清理过期记录
+    if client_ip in _rate_limiter:
+        _rate_limiter[client_ip] = [
+            t for t in _rate_limiter[client_ip]
+            if now - t < window
+        ]
+
+    timestamps = _rate_limiter.get(client_ip, [])
+    if len(timestamps) >= RATE_LIMIT_MAX:
+        return False  # 超限
+
+    # 记录本次请求
+    timestamps.append(now)
+    _rate_limiter[client_ip] = timestamps
+    return True
 
 # ── 凭证池（内存） ───────────────────────────────────────────────────
 
@@ -68,6 +116,17 @@ def init_proxy(proxy_config: dict = None, pg_store=None):
     if proxy_config:
         _config.update(proxy_config)
     _pg_store = pg_store
+
+    # 解析嵌套的 circuit_breaker 配置
+    cb = _config.get("circuit_breaker", {})
+    if isinstance(cb, dict):
+        _config["circuit_breaker_max_errors"] = cb.get("max_errors", _config.get("circuit_breaker_max_errors", 5))
+        _config["circuit_breaker_recovery_sec"] = cb.get("recovery_window", _config.get("circuit_breaker_recovery_sec", 60))
+
+    # 初始化速率限制
+    max_concurrent = _config.get("max_concurrent_requests", 50)
+    rate_limit = _config.get("rate_limit_per_ip", 5)
+    _init_rate_limiter(max_concurrent=max_concurrent, rate_limit=rate_limit)
 
     if pg_store and pg_store.enabled:
         logger.info("LLM Proxy: 使用 PG 凭证池（启动后异步加载）")
@@ -341,7 +400,56 @@ def _get_base_url(provider: str) -> str:
 
 
 async def _do_proxy(request: Request, body: dict) -> Response:
-    """执行代理转发（含 fallback 链）。"""
+    """执行代理转发（含 fallback 链 + 速率限制 + 排队）。"""
+    # ── 速率限制 ──
+    client_ip = request.client.host if request.client else "unknown"
+    if not _check_rate_limit(client_ip):
+        retry_after = RATE_LIMIT_WINDOW
+        logger.warning("[proxy] 速率限制触发: ip=%s limit=%d req/%ds",
+                       client_ip, RATE_LIMIT_MAX, retry_after)
+        return Response(
+            content=json.dumps({
+                "error": f"请求过于频繁，请 {retry_after} 秒后再试",
+                "retry_after": retry_after,
+            }),
+            status_code=429,
+            media_type="application/json",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    # ── 并发排队 ──
+    sem = _request_semaphore
+    if sem is not None:
+        try:
+            async with asyncio.timeout(QUEUE_TIMEOUT):
+                await sem.acquire()
+        except asyncio.TimeoutError:
+            logger.warning("[proxy] 排队超时: ip=%s (max_concurrent=%d)", client_ip, MAX_CONCURRENT)
+            return Response(
+                content=json.dumps({
+                    "error": "系统繁忙，请稍后再试",
+                    "retry_after": 10,
+                }),
+                status_code=503,
+                media_type="application/json",
+                headers={"Retry-After": "10"},
+            )
+    else:
+        # Semaphore not initialized — create a default one
+        global _request_semaphore
+        _request_semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+        sem = _request_semaphore
+        await sem.acquire()
+
+    try:
+        return await _do_proxy_inner(request, body, client_ip)
+    finally:
+        if sem is not None:
+            sem.release()
+
+
+async def _do_proxy_inner(request: Request, body: dict, client_ip: str) -> Response:
+    """实际的代理转发逻辑（不含速率限制和排队）。"""
     model = body.get("model", "")
     providers_to_try = []
 
