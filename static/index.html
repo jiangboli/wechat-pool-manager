@@ -870,19 +870,23 @@ function startImageRefresh() {
 
 async function refreshQR() {
   if (document.getElementById('refreshBtn').disabled) return;
-  showLoading();
+  // 停止所有定时器
   if (statusTimer) clearInterval(statusTimer);
   if (qrTimer) clearInterval(qrTimer);
   if (imageRefreshTimer) clearInterval(imageRefreshTimer);
   document.getElementById('countdown').textContent = '刷新中...';
 
-  // 重新从表单获取二维码（带同一用户信息）
   if (currentSlot) {
-    // 只是刷新 slot 图片，不重新提交表单
-    refreshSlotImage();
-    startPollingStatus(currentSlot);
-    startCountdown();
-    startImageRefresh();
+    const img = document.getElementById('qrImg');
+    if (img) {
+      // 直接刷新图片 src，不删除 img 标签
+      img.src = '/api/v1/pool/qr-image/' + currentSlot + '?t=' + Date.now();
+      countdownValue = 50;
+      setStatus('刷新中...', 'waiting');
+      startPollingStatus(currentSlot);
+      startCountdown();
+      startImageRefresh();
+    }
   }
 }
 
