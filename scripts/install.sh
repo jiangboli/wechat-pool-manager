@@ -15,7 +15,7 @@
 #   1. 自动安装 Docker + Docker Compose
 #   2. 下载项目代码到 ~/wechat-pool-manager/
 #   3. 运行 setup.sh 构建镜像并启动 3 个管理容器
-#   4. 如未检测到 auth.json 且传入 DEEPSEEK_KEY 环境变量，自动初始化 API Key
+#   4. 如传入了 DEEPSEEK_KEY 环境变量，自动添加 API Key
 #
 
 set -euo pipefail
@@ -69,4 +69,34 @@ fi
 # ── Step 4: 运行 setup.sh ────────────────────────────────────────────────
 echo "[3/3] 🚀 配置并启动..."
 cd "$PROJECT_DIR"
-exec bash scripts/setup.sh --prompt-keys "$@"
+bash scripts/setup.sh "$@"
+
+echo ""
+echo "══════════════════════════════════════════════════"
+echo "   ✅ 安装完成！"
+echo ""
+
+# ── Step 5: 添加 API Key（如果传了 DEEPSEEK_KEY）──────────────────────────
+if [ -n "${DEEPSEEK_KEY:-}" ]; then
+  echo "📌 添加 API Key..."
+  sleep 3
+  curl -s -X POST http://localhost:8765/api/v1/proxy/keys \
+    -H 'Content-Type: application/json' \
+    -d "{\"provider\":\"deepseek\",\"key\":\"$DEEPSEEK_KEY\",\"label\":\"key-1\"}" \
+    && echo "  ✅ DeepSeek Key 已添加"
+fi
+
+echo ""
+echo "   绑定页:    http://$(hostname -I | awk '{print $1}'):8765"
+echo ""
+echo "   管理 Token 保存在:  $PROJECT_DIR/.env"
+echo ""
+echo "   如需添加 API Key:"
+echo "     curl -X POST http://localhost:8765/api/v1/proxy/keys \\"
+echo "       -H 'Content-Type: application/json' \\"
+echo "       -d '{\"provider\":\"deepseek\",\"key\":\"sk-xxx\",\"label\":\"key-1\"}'"
+echo ""
+echo "   查看容器状态:"
+echo "     docker ps --filter name=pool-"
+echo ""
+echo "══════════════════════════════════════════════════"

@@ -52,6 +52,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --host STR       监听地址（默认 0.0.0.0）"
       echo "  --admin-token STR 管理接口 Token（不传则自动生成随机 Token）"
       echo "  --pg-dsn STR    PG 连接 DSN (postgresql+asyncpg://user:pass@host:port/db)"
+      echo "  --machine-ip STR 本机外网 IP（默认自动检测）"
       echo ""
       echo "示例:"
       echo "  bash setup.sh --total 30 --hot-pool 3"
