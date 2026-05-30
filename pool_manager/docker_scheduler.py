@@ -178,8 +178,13 @@ agent:
 delegation:
   subagent_auto_approve: true
 
+# 完全禁用审批弹窗（auto 模式=无需人工确认）
 approvals:
+  mode: auto
   destructive_slash_confirm: false
+
+# hooks 自动接受（防止 Hermes 重写配置后弹窗）
+hooks_auto_accept: true
 
 # 禁用预执行安全扫描（bot 用户即主人，无需审批）
 security:
