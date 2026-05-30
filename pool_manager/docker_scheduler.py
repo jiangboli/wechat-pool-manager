@@ -199,6 +199,13 @@ security:
             os.chown(managed_path, 1000, -1)
             logger.info("[%s] .managed 标记已创建", profile)
 
+        # .managed 文件触发 Hermes 检查 memories/ 目录是否存在
+        memories_dir = os.path.join(hdir, "memories")
+        if not os.path.exists(memories_dir):
+            os.makedirs(memories_dir, exist_ok=True)
+            os.chown(memories_dir, 1000, -1)
+            logger.info("[%s] memories 目录已创建", profile)
+
     def write_soul(self, profile: str, lobster_name: str = ""):
         """写入容器 ~/.hermes/SOUL.md（agent 身份/人格定义）。"""
         hdir = self.ensure_data_dir(profile)
