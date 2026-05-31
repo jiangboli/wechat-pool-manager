@@ -796,7 +796,6 @@ function showRebindQR(url, profileName, pendingToken) {
     '" alt="微信二维码" id="qrImg" onerror="this.onerror=null;showError(\'二维码加载失败\')">';
   setStatus('重新绑定：请使用微信扫码', 'waiting');
   document.getElementById('refreshBtn').disabled = true;
-  document.querySelector('.form-footer .hint').textContent = '扫码后将刷新你的机器人凭证，容器会自动重启';
 }
 
 function showQR(url, slotId) {
