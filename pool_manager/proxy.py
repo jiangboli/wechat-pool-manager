@@ -401,6 +401,7 @@ def _get_base_url(provider: str) -> str:
 
 async def _do_proxy(request: Request, body: dict) -> Response:
     """执行代理转发（含 fallback 链 + 速率限制 + 排队）。"""
+    global _request_semaphore
     # ── 速率限制 ──
     client_ip = request.client.host if request.client else "unknown"
     if not _check_rate_limit(client_ip):
@@ -436,7 +437,6 @@ async def _do_proxy(request: Request, body: dict) -> Response:
             )
     else:
         # Semaphore not initialized — create a default one
-        global _request_semaphore
         _request_semaphore = asyncio.Semaphore(MAX_CONCURRENT)
         sem = _request_semaphore
         await sem.acquire()
