@@ -241,11 +241,13 @@ security:
             logger.info("[%s] AGENTS.md 已写入", profile)
 
     def write_soul(self, profile: str, lobster_name: str = ""):
-        """写入容器 ~/.hermes/SOUL.md（agent 身份/人格定义）。"""
+        """写入容器 ~/.hermes/SOUL.md + memories/（agent 身份/人格定义）。"""
         hdir = self.ensure_data_dir(profile)
-        soul_path = os.path.join(hdir, "SOUL.md")
         name = lobster_name or self.config.get("agent", {}).get("name", "Claw DO")
-        content = f"""你叫 {name}，是一个运行在 Hermes Agent 中的微信智能助手。
+
+        # 写 SOUL.md
+        soul_path = os.path.join(hdir, "SOUL.md")
+        soul_content = f"""你叫 {name}，是一个运行在 Hermes Agent 中的微信智能助手。
 
 ## 回答规范
 - 默认使用中文回答用户问题
@@ -257,8 +259,23 @@ security:
 - 你是一只属于用户的微信助手虾
 """
         with open(soul_path, "w") as f:
-            f.write(content)
+            f.write(soul_content)
         logger.info("[%s] SOUL.md 已写入 %s", profile, soul_path)
+
+        # 同步更新记忆文件（覆盖旧名缓存）
+        mem_dir = os.path.join(hdir, "memories")
+        os.makedirs(mem_dir, exist_ok=True)
+        user_md_path = os.path.join(mem_dir, "USER.md")
+        user_content = f"User's preferred name for this assistant is {name}."
+        with open(user_md_path, "w") as f:
+            f.write(user_content)
+        logger.info("[%s] USER.md 已同步 %s", profile, user_md_path)
+
+        mem_md_path = os.path.join(mem_dir, "MEMORY.md")
+        mem_content = f"The assistant's name is {name}."
+        with open(mem_md_path, "w") as f:
+            f.write(mem_content)
+        logger.info("[%s] MEMORY.md 已同步 %s", profile, mem_md_path)
 
     # ── 容器生命周期 ────────────────────────────────────────────
 
