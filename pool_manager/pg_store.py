@@ -454,6 +454,59 @@ class PgStore:
         except Exception as e:
             logger.warning("更新心跳失败: %s", e)
 
+    async def update_binding_credentials(self, profile: str, account_id: str = "",
+                                          bot_token: str = "", bot_base_url: str = "") -> bool:
+        """更新绑定记录中的微信凭证。"""
+        if not self._enabled:
+            return False
+        try:
+            async with self._session() as session:
+                stmt = select(Binding).where(Binding.profile_name == profile)
+                result = await session.execute(stmt)
+                binding = result.scalar_one_or_none()
+                if binding:
+                    if account_id:
+                        binding.account_id = account_id
+                    if bot_token:
+                        binding.bot_token = bot_token
+                    if bot_base_url:
+                        binding.bot_base_url = bot_base_url
+                    binding.updated_at = datetime.now(timezone.utc)
+                    await session.commit()
+                    logger.info("绑定凭证已更新: profile=%s", profile)
+                    return True
+                logger.warning("更新凭证失败: profile=%s 未找到", profile)
+                return False
+        except Exception as e:
+            logger.warning("更新绑定凭证失败: %s", e)
+            return False
+
+    async def update_binding_user_info(self, profile: str, phone: str = "",
+                                        lobster_name: str = "", user_name: str = "") -> bool:
+        """更新绑定记录中的用户信息。"""
+        if not self._enabled:
+            return False
+        try:
+            async with self._session() as session:
+                stmt = select(Binding).where(Binding.profile_name == profile)
+                result = await session.execute(stmt)
+                binding = result.scalar_one_or_none()
+                if binding:
+                    if phone:
+                        binding.phone = phone
+                    if lobster_name:
+                        binding.lobster_name = lobster_name
+                    if user_name:
+                        binding.user_name = user_name
+                    binding.updated_at = datetime.now(timezone.utc)
+                    await session.commit()
+                    logger.info("绑定用户信息已更新: profile=%s", profile)
+                    return True
+                return False
+        except Exception as e:
+            logger.warning("更新绑定用户信息失败: %s", e)
+            return False
+
     # ── API Key 管理 ────────────────────────────────────────────────
 
     async def load_api_keys(self) -> list[dict]:

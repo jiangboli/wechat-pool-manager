@@ -172,6 +172,104 @@ class HotPoolSlot:
         self._running = False
 
 
+class RebindSession:
+    """已绑定用户的重新扫码会话——直接为指定 profile 生成 QR，不占热池槽位。"""
+
+    def __init__(self, profile: str):
+        self.profile = profile
+        self.config = {}
+        self.base_url = ILINK_BASE_URL
+        self.qr_url = ""
+        self.qr_value = ""
+        self.status = "idle"
+        self.account_id = None
+        self.token = None
+        self.user_id = None
+        self.bot_base_url = None
+        self._aiohttp = None
+        self._running = False
+
+    async def _api_get(self, url: str, timeout_ms: int = 15000):
+        import aiohttp
+        import json
+        try:
+            timeout = aiohttp.ClientTimeout(total=timeout_ms / 1000)
+            async with self._aiohttp.get(url, timeout=timeout, ssl=False) as resp:
+                if resp.status == 200:
+                    body = await resp.read()
+                    return json.loads(body)
+        except Exception as exc:
+            logger.warning("[rebind:%s] API 调用失败: %s", self.profile, exc)
+        return None
+
+    async def start(self, config: dict) -> bool:
+        """调用 iLink 生成 QR 并轮询扫码状态。返回 True=确认成功。"""
+        import aiohttp
+        import asyncio
+        self.config = config
+        self._running = True
+        conn = aiohttp.TCPConnector(ssl=False)
+        async with aiohttp.ClientSession(connector=conn, trust_env=True) as session:
+            self._aiohttp = session
+            deadline = asyncio.get_event_loop().time() +                 config.get("ilink", {}).get("qr_timeout_seconds", 480)
+
+            # Step 1: 获取二维码
+            qr_resp = await self._api_get(
+                f"{self.base_url}/{EP_GET_BOT_QR}?bot_type=3",
+                QR_TIMEOUT_MS,
+            )
+            if not qr_resp:
+                self.status = "error"
+                logger.error("[rebind:%s] 获取二维码失败", self.profile)
+                return False
+
+            self.qr_value = str(qr_resp.get("qrcode") or "")
+            self.qr_url = str(qr_resp.get("qrcode_img_content") or "")
+            self.status = "waiting"
+            logger.info("[rebind:%s] 二维码已就绪", self.profile)
+
+            # Step 2: 轮询扫码状态
+            while self._running and asyncio.get_event_loop().time() < deadline:
+                status_resp = await self._api_get(
+                    f"{self.base_url}/{EP_GET_QR_STATUS}?qrcode={self.qr_value}",
+                    QR_TIMEOUT_MS,
+                )
+                if not status_resp:
+                    await asyncio.sleep(
+                        config.get("ilink", {}).get("qr_poll_interval", 1))
+                    continue
+
+                status = str(status_resp.get("status") or "wait")
+                if status == "confirmed":
+                    self.account_id = str(status_resp.get("ilink_bot_id") or "")
+                    self.token = str(status_resp.get("bot_token") or "")
+                    self.bot_base_url = str(status_resp.get("baseurl") or self.base_url)
+                    self.user_id = str(status_resp.get("ilink_user_id") or "")
+                    if not self.account_id or not self.token:
+                        logger.error("[rebind:%s] QR 确认但凭证不完整", self.profile)
+                        self.status = "error"
+                        return False
+                    self.status = "confirmed"
+                    logger.info("[rebind:%s] 重新绑定成功！user_id=%s", self.profile, self.user_id)
+                    return True
+                elif status == "expired":
+                    self.status = "expired"
+                    logger.warning("[rebind:%s] 二维码已过期", self.profile)
+                    return False
+                elif status == "scaned":
+                    logger.info("[rebind:%s] 已扫码，等待确认", self.profile)
+
+                await asyncio.sleep(
+                    config.get("ilink", {}).get("qr_poll_interval", 1))
+
+            self.status = "timeout"
+            logger.warning("[rebind:%s] 二维码等待超时", self.profile)
+            return False
+
+    def stop(self):
+        self._running = False
+
+
 class HotPool:
     """热池管理器——保持 N 个活跃 QR 扫码槽位。"""
 
@@ -328,6 +426,24 @@ class HotPool:
                 "refreshed_at": slot.refreshed_at,
             })
         return result
+
+    async def generate_rebind_qr(self, profile: str) -> Optional[str]:
+        """为已绑定 profile 生成独立 QR 码（不占热池槽位）。"""
+        session = RebindSession(profile)
+        self._rebind_sessions[profile] = session
+        asyncio.create_task(session.start(self.config))
+        await asyncio.sleep(1)  # 给 session.start 一点时间获取 QR
+        return session.qr_url or None
+
+    def get_rebind_session(self, profile: str) -> Optional[RebindSession]:
+        """获取 rebind 会话状态。"""
+        return self._rebind_sessions.get(profile)
+
+    def cleanup_rebind_session(self, profile: str):
+        """清理已完成的 rebind 会话。"""
+        session = self._rebind_sessions.pop(profile, None)
+        if session:
+            session.stop()
 
     def set_slot_user_info(self, profile: str, user_info: dict):
         """将用户提交的信息绑定到指定槽位。"""

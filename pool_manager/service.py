@@ -138,7 +138,22 @@ async def register_binding(req: Request):
     if pg_store.enabled:
         existing = await pg_store.find_binding_by_phone(phone)
         if existing:
-            raise HTTPException(409, "该手机号已绑定，不能重复绑定")
+            # ✅ 已绑用户——走 rebind 流程：为原 profile 生成独立 QR
+            profile = existing["profile_name"]
+            if hot_pool.get_rebind_session(profile):
+                raise HTTPException(409, "该账号正在重新绑定中，请等待完成")
+            qr_url = await hot_pool.generate_rebind_qr(profile)
+            if not qr_url:
+                raise HTTPException(503, "生成二维码失败，请重试")
+            pending_token = secrets.token_hex(16)
+            pg_store.save_pending_binding(pending_token, phone, lobster_name, user_name, profile)
+            logger.info("重新绑定: profile=%s phone=%s", profile, phone)
+            return {
+                "rebind": True,
+                "profile_name": profile,
+                "qr_url": qr_url,
+                "pending_token": pending_token,
+            }
     # 找可用槽位
     slots = hot_pool.get_all_slots()
     target = None
@@ -164,6 +179,64 @@ async def register_binding(req: Request):
         "slot_id": slot_id,
         "qr_url": target["qr_url"],
     }
+
+
+@bind_app.get("/api/v1/bind/rebind-status/{pending_token}")
+async def get_rebind_status(pending_token: str):
+    """轮询 rebind QR 扫码状态。"""
+    pending = pg_store.get_pending_binding(pending_token)
+    if not pending:
+        raise HTTPException(404, "无效的 pending_token")
+    profile = pending["slot_id"]
+    session = hot_pool.get_rebind_session(profile) if hot_pool else None
+    if not session:
+        # 会话已清理或不存在
+        return {"status": "not_found"}
+
+    result = {"status": session.status}
+    if session.status == "confirmed":
+        # 确认成功 → 写凭证 + 重启容器 + 更新 PG
+        try:
+            scheduler = hot_pool.get_scheduler() if hasattr(hot_pool, "get_scheduler") else None
+            # write_env
+            if hot_pool._scheduler:
+                hot_pool._scheduler.write_env(profile, {
+                    "account_id": session.account_id or "",
+                    "token": session.token or "",
+                    "base_url": session.bot_base_url or "",
+                })
+                hot_pool._scheduler.restart_container(profile)
+            # 更新 PG 记录
+            if pg_store.enabled:
+                await pg_store.update_binding_credentials(
+                    profile=profile,
+                    account_id=session.account_id or "",
+                    bot_token=session.token or "",
+                    bot_base_url=session.bot_base_url or "",
+                )
+                new_phone = pending.get("phone", "")
+                new_lobster = pending.get("lobster_name", "")
+                new_user = pending.get("user_name", "")
+                if new_phone or new_lobster or new_user:
+                    await pg_store.update_binding_user_info(
+                        profile=profile,
+                        phone=new_phone,
+                        lobster_name=new_lobster,
+                        user_name=new_user,
+                    )
+                await pg_store.log_qr_event(profile, "rebind", session.user_id or "")
+            logger.info("[rebind] %s 重新绑定完成，容器已重启", profile)
+            result["profile_name"] = profile
+        except Exception as e:
+            logger.error("[rebind] %s 重新绑定异常: %s", profile, e)
+            result["status"] = "error"
+            result["error"] = str(e)
+        finally:
+            hot_pool.cleanup_rebind_session(profile)
+    elif session.status in ("expired", "error", "timeout"):
+        hot_pool.cleanup_rebind_session(profile)
+
+    return result
 
 
 @bind_app.get("/api/v1/pool/available")
