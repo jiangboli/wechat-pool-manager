@@ -170,6 +170,10 @@ custom_providers:
 agent:
   auto_send_tool_results: true
 
+display:
+  interim_assistant_messages: false
+  tool_progress: "off"
+
 # 自动审批——无需用户手动 approve
 delegation:
   subagent_auto_approve: true
