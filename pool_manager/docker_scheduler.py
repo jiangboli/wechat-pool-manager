@@ -176,7 +176,7 @@ delegation:
 
 # 完全禁用审批弹窗（auto 模式=无需人工确认）
 approvals:
-  mode: auto
+  mode: off
   destructive_slash_confirm: false
 
 # hooks 自动接受（防止 Hermes 重写配置后弹窗）
