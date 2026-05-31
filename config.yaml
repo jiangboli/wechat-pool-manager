@@ -11,7 +11,7 @@
 # ── 池配置 ──
 pool:
   # 预创建 profile 总数。每个 profile ≈ 50KB 磁盘，无资源消耗
-  total_profiles: 100
+  total_profiles: 500
 
   # 热池常驻 QR 扫码槽位数。
   # 每个槽位持有一个有效二维码，用户到来直接展示。
@@ -21,7 +21,7 @@ pool:
   # 最大同时运行容器数。
   # 每个容器 ≈ 60MB RAM（Python async 长轮询）。
   # 按机器内存估算: 4GB→15, 8GB→40, 16GB→80
-  max_bound_gateways: 80
+  max_bound_gateways: 500
 
   # Profile 名称前缀
   profile_prefix: "weixin-"
@@ -34,7 +34,7 @@ docker:
   image: "hermes-bot:latest"          # 容器镜像
   network: "hermes-pool-net"           # Docker 网络
   data_root: "/home/dosh/data/"             # 数据卷根目录
-  max_containers: 80                   # 最大同时运行容器数
+  max_containers: 500                   # 最大同时运行容器数
   container_defaults:
     memory_limit: "512m"               # 每个容器最多 512MB
     memory_reservation: "128m"         # 预留 128MB
