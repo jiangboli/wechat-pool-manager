@@ -649,13 +649,7 @@ async function verifyPhone() {
     const resp = await fetch(API_BASE + '/api/v1/bind/check-phone?phone=' + encodeURIComponent(phone));
     const data = await resp.json();
 
-    if (data.exists) {
-      boundEl.style.display = 'block';
-      btn.disabled = false;
-      btn.textContent = '✅ 验证手机号';
-      return;
-    }
-
+    // 无论手机号是否已绑定，都允许继续（已绑用户走 rebind 流程）
     // 手机号可用 → 切换到信息填写页
     document.getElementById('verifiedPhone').textContent = phone;
     document.getElementById('pagePhone').classList.remove('active');
