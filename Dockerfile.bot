@@ -15,6 +15,7 @@ ENV TZ=Asia/Shanghai
 # 创建运行用户
 RUN useradd -m --uid 1000 hermes
 USER hermes
+RUN mkdir -p /home/hermes/.hermes/logs /home/hermes/.hermes/cron && chown -R hermes:hermes /home/hermes/.hermes
 WORKDIR /home/hermes
 
 # 写入预置 AGENTS.md——长任务进度报告规则

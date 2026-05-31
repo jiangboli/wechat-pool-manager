@@ -73,7 +73,7 @@ if os.path.exists(STATIC_DIR):
 async def root():
     index_path = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(index_path):
-        return HTMLResponse(open(index_path, encoding="utf-8").read())
+        return HTMLResponse(content=open(index_path, encoding="utf-8").read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     return {"message": "Pool Manager running. Frontend not found."}
 
 
