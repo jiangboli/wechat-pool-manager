@@ -734,12 +734,21 @@ async function submitForm() {
     document.getElementById('pageQR').classList.add('active');
     document.getElementById('lobsterName').textContent = document.getElementById('inputUser').value.trim();
 
-    showQR(data.qr_url, data.slot_id);
-    countdownValue = 50;
-    startPollingStatus(data.slot_id);
-    startCountdown();
-    startImageRefresh();
-    fetchStats();
+    if (data.rebind) {
+        // 已绑用户重新绑定——使用专属 QR
+        showRebindQR(data.qr_url, data.profile_name, data.pending_token);
+        countdownValue = 50;
+        startPollingRebindStatus(data.pending_token);
+        startCountdown();
+        fetchStats();
+    } else {
+        showQR(data.qr_url, data.slot_id);
+        countdownValue = 50;
+        startPollingStatus(data.slot_id);
+        startCountdown();
+        startImageRefresh();
+        fetchStats();
+    }
 
   } catch (e) {
     alert('网络错误，请检查连接后重试');
@@ -777,6 +786,19 @@ function showLoading() {
   qrBox.classList.add('pulsing');
   document.getElementById('qrContent').innerHTML = '<div class="qr-skeleton"></div>';
   setStatus('获取中...', '');
+}
+
+function showRebindQR(url, profileName, pendingToken) {
+  currentSlot = profileName;
+  lastQrUrl = url;
+  const qrBox = document.getElementById('qrBox');
+  qrBox.className = 'qr-box';
+  qrBox.classList.add('pulsing');
+  document.getElementById('qrContent').innerHTML =
+    '<img src="' + url + '" alt="微信二维码" id="qrImg" onerror="this.onerror=null;showError(\'二维码加载失败\')" style="max-width:200px;max-height:200px;">';
+  setStatus('重新绑定：请使用微信扫码', 'waiting');
+  document.getElementById('refreshBtn').disabled = true;
+  document.querySelector('.form-footer .hint').textContent = '扫码后将刷新你的机器人凭证，容器会自动重启';
 }
 
 function showQR(url, slotId) {
@@ -842,6 +864,27 @@ async function pollStatus(slotId) {
       refreshSlotImage();
     }
   } catch (e) {}
+}
+
+async function pollRebindStatus(pendingToken) {
+  try {
+    const resp = await fetch(API_BASE + '/api/v1/bind/rebind-status/' + pendingToken);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (data.status === 'confirmed') { showSuccess(); return; }
+    if (data.status === 'scaned') { showScanned(); return; }
+    if (data.status === 'expired' || data.status === 'error' || data.status === 'timeout') {
+      setStatus('二维码已过期，请重新提交', 'error');
+      document.getElementById('refreshBtn').disabled = false;
+      if (statusTimer) clearInterval(statusTimer);
+      return;
+    }
+  } catch (e) {}
+}
+
+function startPollingRebindStatus(pendingToken) {
+  if (statusTimer) clearInterval(statusTimer);
+  statusTimer = setInterval(() => pollRebindStatus(pendingToken), 2000);
 }
 
 function startPollingStatus(slotId) {
