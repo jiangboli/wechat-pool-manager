@@ -206,6 +206,8 @@ async def get_rebind_status(pending_token: str):
                     "base_url": session.bot_base_url or "",
                     "user_id": session.user_id or "",
                 })
+                if new_lobster:
+                    hot_pool._scheduler.write_soul(profile, lobster_name=new_lobster)
                 hot_pool._scheduler.restart_container(profile)
             # 更新 PG 记录
             if pg_store.enabled:
