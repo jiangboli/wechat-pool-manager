@@ -198,6 +198,10 @@ async def get_rebind_status(pending_token: str):
         # 确认成功 → 写凭证 + 重启容器 + 更新 PG
         try:
             scheduler = hot_pool.get_scheduler() if hasattr(hot_pool, "get_scheduler") else None
+            # 先提取需要的数据
+            new_phone = pending.get("phone", "")
+            new_lobster = pending.get("lobster_name", "")
+            new_user = pending.get("user_name", "")
             # write_env
             if hot_pool._scheduler:
                 hot_pool._scheduler.write_env(profile, {
@@ -217,9 +221,6 @@ async def get_rebind_status(pending_token: str):
                     bot_token=session.token or "",
                     bot_base_url=session.bot_base_url or "",
                 )
-                new_phone = pending.get("phone", "")
-                new_lobster = pending.get("lobster_name", "")
-                new_user = pending.get("user_name", "")
                 if new_phone or new_lobster or new_user:
                     await pg_store.update_binding_user_info(
                         profile=profile,
