@@ -6,7 +6,9 @@
 用法（替代 hermes gateway run）:
     python start-hermes.py
 """
+import os
 import re
+import subprocess
 import sys
 
 
@@ -17,7 +19,6 @@ def _patch_status():
 
         _original = HermesGatewayRunner._emit_status
 
-        # 需要过滤的生命周期消息模式
         _noisy_patterns = re.compile(
             r"^(⚡\s*)?(Gateway shutting down|Stopped|Restarting|Retry)"
             r"|rate limited|waiting \d+s"
@@ -29,22 +30,18 @@ def _patch_status():
         )
 
         def _patched(self, status_type, message, *args, **kwargs):
-            # 只过滤 lifecycle 和 status 类型的消息
             if status_type in ("lifecycle", "status"):
                 if _noisy_patterns.search(str(message)):
-                    return  # 静默丢弃
+                    return
             return _original(self, status_type, message, *args, **kwargs)
 
         HermesGatewayRunner._emit_status = _patched
-    except Exception as e:
-        # 打补丁失败不影响 Hermes 启动
-        import logging
-
-        logging.warning("[start-hermes] patch failed: %s", e)
+    except Exception:
+        pass  # patch 失败不影响启动
 
 
 if __name__ == "__main__":
     _patch_status()
-    from hermes_cli.main import cli
-
-    sys.exit(cli(["gateway", "run", "--replace"]))
+    # 使用 subprocess 调用 hermes CLI，兼容不同版本
+    hermes_bin = os.environ.get("HERMES_BIN", "hermes")
+    sys.exit(subprocess.call([hermes_bin, "gateway", "run", "--replace"]))
