@@ -33,7 +33,7 @@ pool:
 docker:
   image: "hermes-bot:latest"          # 容器镜像
   network: "hermes-pool-net"           # Docker 网络
-  data_root: "/home/data/"             # 数据卷根目录
+  data_root: "/home/dosh/data/"             # 数据卷根目录
   max_containers: 80                   # 最大同时运行容器数
   container_defaults:
     memory_limit: "2g"               # 每个容器最多 2GB
