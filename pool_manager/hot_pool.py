@@ -433,8 +433,19 @@ class HotPool:
         session = RebindSession(profile)
         self._rebind_sessions[profile] = session
         asyncio.create_task(session.start(self.config))
-        await asyncio.sleep(1)  # 给 session.start 一点时间获取 QR
-        return session.qr_url or None
+        # 等待 QR 就绪（最多等 15 秒）
+        for i in range(30):
+            await asyncio.sleep(0.5)
+            if session.qr_url:
+                logger.info("[rebind:%s] QR 已就绪", profile)
+                return session.qr_url
+            if session.status in ("error", "expired", "timeout"):
+                logger.warning("[rebind:%s] QR 生成失败: %s", profile, session.status)
+                self.cleanup_rebind_session(profile)
+                return None
+        logger.warning("[rebind:%s] QR 生成超时", profile)
+        self.cleanup_rebind_session(profile)
+        return None
 
     def get_rebind_session(self, profile: str) -> Optional[RebindSession]:
         """获取 rebind 会话状态。"""
