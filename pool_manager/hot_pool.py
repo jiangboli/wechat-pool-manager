@@ -338,6 +338,10 @@ class HotPool:
                                 "token": slot.token or "",
                                 "base_url": slot.bot_base_url or "",
                             })
+                            # 更新 lobster_name（SOUL.md）
+                            old_lobster = (slot.user_info or {}).get("lobster_name", "")
+                            if old_lobster:
+                                self._scheduler.write_soul(existing["profile_name"], lobster_name=old_lobster)
                             self._scheduler.restart_container(existing["profile_name"])
                             # 记录事件 + 从热池中移除
                             await pg_store.log_qr_event(profile, "rebind", slot.user_id or "")
