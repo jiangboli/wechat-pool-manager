@@ -139,6 +139,16 @@ class HotPoolSlot:
                         self.bot_base_url = str(status_resp.get("baseurl") or self.base_url)
                         self.user_id = str(status_resp.get("ilink_user_id") or "")
                         if not self.account_id or not self.token:
+
+                        # 检查用户信息是否完整（必须经过表单提交才能绑定）
+                        if not self.user_info or not self.user_info.get("phone"):
+                            logger.warning("[%s] QR 被直接扫描（未经过表单提交），忽略此次绑定，重新生成二维码",
+                                          self.profile)
+                            self.status = "expired"
+                            self.refresh_count += 1
+                            if self.refresh_count > self.max_refresh:
+                                return False
+                            break  # 跳出内层循环，重新获取新二维码
                             logger.error("[%s] QR 确认但凭证不完整", self.profile)
                             return False
 
