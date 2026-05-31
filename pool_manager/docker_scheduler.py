@@ -122,6 +122,11 @@ class DockerScheduler:
         """确保 profile 的数据目录存在并返回 hermes 目录路径。"""
         hdir = _hermes_dir(profile, self.data_root)
         os.makedirs(hdir, exist_ok=True)
+        # 确保 logs 和 cron 目录存在（Hermes 启动时需要写）
+        for sub in ["logs", "cron"]:
+            subdir = os.path.join(hdir, sub)
+            os.makedirs(subdir, exist_ok=True)
+            os.chown(subdir, 1000, -1)
         # 容器内的 hermes 用户 (UID 1000) 需要写 .hermes/logs/ .hermes/sessions.db
         # chown 到 UID 1000 让容器内 hermes 用户可正常写入，不开放权限给其他人
         os.chown(hdir, 1000, -1)
