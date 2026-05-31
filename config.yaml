@@ -48,6 +48,7 @@ proxy:
   circuit_breaker:
     max_errors: 5                      # 连续 5 次错误触发熔断
     recovery_window: 60                # 60 秒后尝试恢复
+  rate_limit_per_ip: 60                # 每个容器 IP 每分钟请求上限
 
 frontend:
   # Pool Manager API 监听端口
