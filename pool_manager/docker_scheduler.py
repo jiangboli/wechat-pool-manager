@@ -211,6 +211,35 @@ security:
             os.chown(cron_dir, 1000, -1)
             logger.info("[%s] cron 目录已创建", profile)
 
+        # 写入 AGENTS.md——行为规则，Hermes 自动注入系统提示
+        agents_path = os.path.join(hdir, "AGENTS.md")
+        if not os.path.exists(agents_path):
+            agents_content = """# 长任务进度报告
+
+当执行耗时的操作（网页搜索、数据分析、文件处理等）时：
+
+1. 如果任务开始后 1 分钟仍未回复用户，必须发送进度更新
+2. 之后每隔 1 分钟更新一次进度，直到任务完成
+3. 进度消息格式：
+   - 已用时
+   - 当前进度（步骤 N/M）
+   - 关键输出摘要
+
+4. 任务完成后发送最终结果（成功/失败）
+5. 用户回复消息后停止进度报告
+
+## 示例
+
+```
+⏳ 还在搜索中...
+已用时：2 分钟
+当前进度：已搜索 3 个数据源，还有 2 个
+```"""
+            with open(agents_path, "w") as f:
+                f.write(agents_content)
+            os.chown(agents_path, 1000, -1)
+            logger.info("[%s] AGENTS.md 已写入", profile)
+
     def write_soul(self, profile: str, lobster_name: str = ""):
         """写入容器 ~/.hermes/SOUL.md（agent 身份/人格定义）。"""
         hdir = self.ensure_data_dir(profile)
