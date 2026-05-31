@@ -125,7 +125,7 @@ pool:
 docker:
   image: "hermes-bot:latest"
   network: "hermes-pool-net"
-  data_root: "/home/data/"
+  data_root: "$DATA_ROOT/"
   data_root_host: "$DATA_ROOT/"
   max_containers: $MAX_BOUND
   container_defaults:
