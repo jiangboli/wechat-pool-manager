@@ -284,6 +284,7 @@ class HotPool:
         self.prefix = config.get("pool", {}).get("profile_prefix", "weixin-")
         self.slots: Dict[str, HotPoolSlot] = {}
         self._tasks: Dict[str, asyncio.Task] = {}
+        self._rebind_sessions: Dict[str, RebindSession] = {}
         self._running = False
 
     async def start(self):
