@@ -343,6 +343,8 @@ class HotPool:
                             if old_lobster:
                                 self._scheduler.write_soul(existing["profile_name"], lobster_name=old_lobster)
                             self._scheduler.restart_container(existing["profile_name"])
+                            # 清理旧 session/会话数据，让新用户从零开始
+                            self._scheduler.delete_runtime_data(existing["profile_name"])
                             # 记录事件 + 从热池中移除
                             await pg_store.log_qr_event(profile, "rebind", slot.user_id or "")
                             return
