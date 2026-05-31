@@ -167,7 +167,7 @@ class PgStore:
 
     def get_pending_binding(self, token: str) -> Optional[dict]:
         """扫码确认后获取暂存的用户信息。"""
-        return self._pending_bindings.pop(token, None)
+        return self._pending_bindings.get(token)
 
     async def create_binding(self, profile: str, user_id: str, account_id: str,
                               bot_token: str, bot_base_url: str,
