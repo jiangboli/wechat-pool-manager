@@ -18,4 +18,6 @@ USER hermes
 WORKDIR /home/hermes
 
 # 默认 CMD（启动 Hermes Gateway）
-CMD ["hermes", "gateway", "run", "--replace"]
+COPY start-hermes.py /app/start-hermes.py
+
+CMD ["python", "/app/start-hermes.py"]
