@@ -10,6 +10,7 @@ import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 
 def _patch_status():
@@ -21,7 +22,7 @@ def _patch_status():
 
         _noisy_patterns = re.compile(
             r"^(⚡\s*)?(Gateway shutting down|Stopped|Restarting|Retry)"
-            r"|rate limited|waiting \d+s"
+            r"|rate limited|waiting \ds"
             r"|auxiliary \w+ failed"
             r"|fallback context"
             r"|Self-improvement"
@@ -42,6 +43,12 @@ def _patch_status():
 
 if __name__ == "__main__":
     _patch_status()
+    # 加载 .env 环境变量（确保 WEIXIN_TOKEN 等凭证可用）
+    try:
+        from hermes_cli.env_loader import load_hermes_dotenv
+        load_hermes_dotenv()
+    except Exception:
+        pass  # 加载失败不影响启动
     # 使用 subprocess 调用 hermes CLI，兼容不同版本
     hermes_bin = os.environ.get("HERMES_BIN", "hermes")
     sys.exit(subprocess.call([hermes_bin, "gateway", "run", "--replace"]))
