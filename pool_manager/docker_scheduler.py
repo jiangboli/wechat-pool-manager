@@ -511,19 +511,6 @@ security:
             logger.error("检查镜像失败: %s", e)
             return False
 
-    def delete_runtime_data(self, profile: str):
-        """删除运行态数据（session、state.db），重启后 Hermes 自动重建。"""
-        hdir = _hermes_dir(profile, self.data_root)
-        session_file = os.path.join(hdir, 'sessions', 'sessions.json')
-        state_db = os.path.join(hdir, 'state.db')
-        for p in [session_file, state_db, state_db + '-shm', state_db + '-wal']:
-            try:
-                if os.path.exists(p):
-                    os.remove(p)
-                    print('  del:', p)
-            except Exception as e:
-                print('  fail:', p, e)
-
     def close(self):
         """关闭 Docker 客户端。"""
         if self._client:
