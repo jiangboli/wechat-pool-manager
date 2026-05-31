@@ -204,6 +204,7 @@ async def get_rebind_status(pending_token: str):
                     "account_id": session.account_id or "",
                     "token": session.token or "",
                     "base_url": session.bot_base_url or "",
+                    "user_id": session.user_id or "",
                 })
                 hot_pool._scheduler.restart_container(profile)
             # 更新 PG 记录
