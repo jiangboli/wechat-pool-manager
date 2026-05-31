@@ -141,7 +141,7 @@ async def register_binding(req: Request):
             # ✅ 已绑用户——走 rebind 流程：为原 profile 生成独立 QR
             profile = existing["profile_name"]
             if hot_pool.get_rebind_session(profile):
-                raise HTTPException(409, "该账号正在重新绑定中，请等待完成")
+                hot_pool.cleanup_rebind_session(profile)
             qr_url = await hot_pool.generate_rebind_qr(profile)
             if not qr_url:
                 raise HTTPException(503, "生成二维码失败，请重试")
@@ -237,6 +237,28 @@ async def get_rebind_status(pending_token: str):
         hot_pool.cleanup_rebind_session(profile)
 
     return result
+
+
+@bind_app.get("/api/v1/bind/rebind-qr-image/{profile}")
+async def get_rebind_qr_image(profile: str):
+    """为 rebind 流程生成 QR 码图片。"""
+    if not hot_pool:
+        raise HTTPException(503, "热池未启动")
+    session = hot_pool.get_rebind_session(profile)
+    if not session or not session.qr_url:
+        raise HTTPException(404, "未找到该 profile 的 rebind 会话")
+    try:
+        import qrcode
+        qr = qrcode.QRCode(border=2, box_size=10)
+        qr.add_data(session.qr_url)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return Response(content=buf.getvalue(), media_type="image/png",
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+    except Exception as e:
+        raise HTTPException(500, f"生成二维码失败: {e}")
 
 
 @bind_app.get("/api/v1/pool/available")
