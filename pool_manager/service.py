@@ -454,7 +454,7 @@ async def _start_bind():
 
     # ── PG 持久化初始化 ──────────────────────────────────────────
     await pg_store.connect()
-    llm_proxy.init_proxy(pg_store=pg_store if pg_store.enabled else None)
+    llm_proxy.init_proxy(proxy_config=config.get("proxy", {}), pg_store=pg_store if pg_store.enabled else None)
     if pg_store.enabled:
         try:
             containers = scheduler.list_containers()
@@ -486,14 +486,14 @@ async def _start_admin():
     gm.set_scheduler(scheduler)
     init_admin_token()
     await pg_store.connect()
-    llm_proxy.init_proxy(pg_store=pg_store if pg_store.enabled else None)
+    llm_proxy.init_proxy(proxy_config=config.get("proxy", {}), pg_store=pg_store if pg_store.enabled else None)
     logger.info("Admin 服务启动完成")
 
 
 async def _start_proxy():
     """初始化 LLM Proxy 服务。"""
     await pg_store.connect()
-    llm_proxy.init_proxy(pg_store=pg_store if pg_store.enabled else None)
+    llm_proxy.init_proxy(proxy_config=config.get("proxy", {}), pg_store=pg_store if pg_store.enabled else None)
     if pg_store.enabled:
         await llm_proxy.load_from_pg()
         asyncio.create_task(llm_proxy.refresh_loop(interval=30))
