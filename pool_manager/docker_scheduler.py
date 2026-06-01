@@ -574,6 +574,20 @@ send_message(target="origin", message="⏳ 已用时 2 分钟...")
                     profile = c.labels.get("profile", "")
                     if profile and pg_store.enabled:
                         await pg_store.update_binding_heartbeat(profile)
+
+                    # 检查微信连接状态（扫描最近 5 分钟日志）
+                    if profile:
+                        try:
+                            recent_logs = c.logs(since=300).decode("utf-8", errors="replace")
+                            if "Session expired" in recent_logs:
+                                logger.error("[%s] 微信 Session 已过期，需重新扫码", profile)
+                                if pg_store.enabled:
+                                    await pg_store.update_binding_status(profile, "session_expired")
+                            elif "getUpdates failed" in recent_logs or "poll error" in recent_logs:
+                                logger.warning("[%s] 微信连接异常，自动重启容器...", profile)
+                                c.restart(timeout=10)
+                        except Exception as e:
+                            logger.warning("[%s] 检查微信连接日志失败: %s", profile, e)
                     continue
 
                 if status == "exited":
