@@ -185,6 +185,15 @@ hooks_auto_accept: true
 # 禁用预执行安全扫描（bot 用户即主人，无需审批）
 security:
   tirith_enabled: false
+
+# 显示控制——关闭所有内置中间消息噪音
+display:
+  interim_assistant_messages: false
+  tool_progress: off
+
+# 启用 send_message 工具，用于 agent 自主发业务进度通知
+enabled_toolsets:
+  - messaging
 """
         with open(cfg_path, "w") as f:
             f.write(cfg)
@@ -212,33 +221,42 @@ security:
             logger.info("[%s] cron 目录已创建", profile)
 
         # 写入 AGENTS.md——行为规则，Hermes 自动注入系统提示
+        # 每次都覆盖写入，确保已有容器也能拿到最新规则
         agents_path = os.path.join(hdir, "AGENTS.md")
-        if not os.path.exists(agents_path):
-            agents_content = """# 长任务进度报告
+        agents_content = """# 长任务进度报告
 
-当执行耗时的操作（网页搜索、数据分析、文件处理等）时：
+当用户请求的处理时间预计超过 30 秒时，必须主动向用户报告业务进度。
 
-1. 如果任务开始后 1 分钟仍未回复用户，必须发送进度更新
-2. 之后每隔 1 分钟更新一次进度，直到任务完成
-3. 进度消息格式：
-   - 已用时
-   - 当前进度（步骤 N/M）
-   - 关键输出摘要
+## 核心规则
 
-4. 任务完成后发送最终结果（成功/失败）
-5. 用户回复消息后停止进度报告
+1. 任务开始后 30 秒仍未回复 → 用 send_message 发第一条业务进度
+2. 之后每 60 秒发一条，直到任务完成
+3. 进度消息必须是**业务层面**的描述（不是工具层面）
+4. 任务完成后发送最终结果
+5. 用户回复新消息后停止进度报告
 
-## 示例
+## 进度消息要求
 
+### ✅ 正确的业务进度消息
+- "⏳ 正在分析2024年财报...已读取 3/10 页"
+- "⏳ 已搜索到 5 条相关行情，正在生成对比..."
+- "⏳ 正在爬取数据，已完成 60%"
+
+### ❌ 错误的工具级消息（禁止）
+- "正在调用 web_search 工具"
+- "正在读取文件"
+- "正在执行代码"
+
+## 如何发送
+
+使用 send_message 工具发送进度消息：
 ```
-⏳ 还在搜索中...
-已用时：2 分钟
-当前进度：已搜索 3 个数据源，还有 2 个
+send_message(target="origin", message="⏳ 已用时 2 分钟...")
 ```"""
-            with open(agents_path, "w") as f:
-                f.write(agents_content)
-            os.chown(agents_path, 1000, -1)
-            logger.info("[%s] AGENTS.md 已写入", profile)
+        with open(agents_path, "w") as f:
+            f.write(agents_content)
+        os.chown(agents_path, 1000, -1)
+        logger.info("[%s] AGENTS.md 已写入", profile)
 
     def write_soul(self, profile: str, lobster_name: str = ""):
         """写入容器 ~/.hermes/SOUL.md + memories/（agent 身份/人格定义）。"""
