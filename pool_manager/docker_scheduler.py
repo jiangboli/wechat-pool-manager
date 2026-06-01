@@ -22,6 +22,8 @@ from typing import Optional
 import docker
 from docker.errors import DockerException, ImageNotFound, NotFound
 
+from .pg_store import pg_store
+
 logger = logging.getLogger("pool_manager.docker_scheduler")
 
 # 默认配置
@@ -568,6 +570,10 @@ send_message(target="origin", message="⏳ 已用时 2 分钟...")
                     if health == "unhealthy":
                         logger.warning("[%s] 容器健康检查不通过，重启...", c.name)
                         c.restart(timeout=10)
+                    # 更新 PG 心跳（容器在跑即视为健康）
+                    profile = c.labels.get("profile", "")
+                    if profile and pg_store.enabled:
+                        await pg_store.update_binding_heartbeat(profile)
                     continue
 
                 if status == "exited":
