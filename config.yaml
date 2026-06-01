@@ -6,6 +6,9 @@ pool:
   profile_prefix: "weixin-"
   max_qr_refresh: 3
 
+gateway:
+  health_check_interval: 900
+
 docker:
   image: "hermes-bot:latest"
   network: "hermes-pool-net"
