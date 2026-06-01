@@ -1,76 +1,43 @@
-# WeChat Gateway Pool Manager
-#
-# 为多个微信用户提供独立的 Hermes Gateway 实例（Docker 版）。
-# 整个系统设计为可移植——任意 Linux 机器安装 Docker 后一键部署。
-#
-# 部署方式（推荐 CLI 参数覆盖）:
-#   bash scripts/setup.sh --total 50 --hot-pool 3 --max-bound 30
-#
-# 配置文件中的值作为默认值，CLI 参数优先覆盖。
-
-# ── 池配置 ──
+# WeChat Gateway Pool Manager v4 — 3 容器模式
 pool:
-  # 预创建 profile 总数。每个 profile ≈ 50KB 磁盘，无资源消耗
-  total_profiles: 500
-
-  # 热池常驻 QR 扫码槽位数。
-  # 每个槽位持有一个有效二维码，用户到来直接展示。
-  # 建议: 低配机器 2-3, 中配 4-5, 高配 5-8
+  total_profiles: 100
   hot_pool_size: 5
-
-  # 最大同时运行容器数。
-  # 每个容器 ≈ 60MB RAM（Python async 长轮询）。
-  # 按机器内存估算: 4GB→15, 8GB→40, 16GB→80
-  max_bound_gateways: 500
-
-  # Profile 名称前缀
+  max_bound_gateways: 80
   profile_prefix: "weixin-"
-
-  # QR 过期后最多自动刷新次数（iLink 限制）
   max_qr_refresh: 3
 
-# ── Docker 配置 ──
 docker:
-  image: "hermes-bot:latest"          # 容器镜像
-  network: "hermes-pool-net"           # Docker 网络
-  data_root: "/home/dosh/data/"             # 数据卷根目录
-  max_containers: 500                   # 最大同时运行容器数
+  image: "hermes-bot:latest"
+  network: "hermes-pool-net"
+  data_root: "/home/dosh/data/"
+  data_root_host: "/home/dosh/data/"
+  max_containers: 80
   container_defaults:
-    memory_limit: "512m"               # 每个容器最多 512MB
-    memory_reservation: "128m"         # 预留 128MB
-    cpu_shares: 256                    # CPU 权重 (默认 1024)
-    cpu_quota: 50000                   # 最多使用 0.5 核 (100000=1核)
+    memory_limit: "2g"
+    memory_reservation: "128m"
+    cpu_shares: 256
+    cpu_quota: 50000
 
-# ── LLM Proxy 配置 ──
 proxy:
-  default_provider: "deepseek"         # 默认 LLM provider
-  fallback_providers: ["alibaba"]      # fallback provider 链
+  default_provider: "deepseek"
+  fallback_providers: ["alibaba"]
   circuit_breaker:
-    max_errors: 5                      # 连续 5 次错误触发熔断
-    recovery_window: 60                # 60 秒后尝试恢复
-  rate_limit_per_ip: 60                # 每个容器 IP 每分钟请求上限
+    max_errors: 5
+    recovery_window: 60
 
 frontend:
-  # Pool Manager API 监听端口
-  api_port: 8766
-
-  # 前端页面自动刷新二维码间隔（秒）
-  # iLink 二维码有效期约 60s，建议 45s
+  api_port: 8765
   qr_refresh_seconds: 45
-
-  # 监听地址
   host: "0.0.0.0"
-
-  # 外部访问 URL（可选，用于生成完整二维码链接）
   public_url: ""
 
 logging:
-  level: "INFO"
-  dir: "~/.hermes/wechat-pool/logs/"
+  level: INFO
+  dir: "/app/logs/"
   retain_days: 7
   stats_window_hours: 168
 
 ilink:
   base_url: "https://ilinkai.weixin.qq.com"
-  qr_timeout_seconds: 480    # qr_login 整体超时（含等待扫码时间）
-  qr_poll_interval: 1        # QR 状态轮询间隔（秒）
+  qr_timeout_seconds: 480
+  qr_poll_interval: 1

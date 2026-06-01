@@ -481,6 +481,43 @@ class PgStore:
         except Exception as e:
             logger.warning("更新心跳失败: %s", e)
 
+    async def update_binding_status(self, profile: str, status: str):
+        """更新绑定状态（用于标记 session_expired 等异常）。"""
+        if not self._enabled:
+            return
+        try:
+            async with self._session() as session:
+                stmt = select(Binding).where(Binding.profile_name == profile)
+                result = await session.execute(stmt)
+                binding = result.scalar_one_or_none()
+                if binding:
+                    binding.status = status
+                    binding.updated_at = datetime.now(timezone.utc)
+                    await session.commit()
+                    logger.info("绑定状态已更新: profile=%s status=%s", profile, status)
+        except Exception as e:
+            logger.warning("更新绑定状态失败: %s", e)
+
+    async def restore_binding_if_expired(self, profile: str):
+        """如果绑定状态是 session_expired，自动恢复为 active。"""
+        if not self._enabled:
+            return
+        try:
+            async with self._session() as session:
+                stmt = select(Binding).where(
+                    Binding.profile_name == profile,
+                    Binding.status == "session_expired",
+                )
+                result = await session.execute(stmt)
+                binding = result.scalar_one_or_none()
+                if binding:
+                    binding.status = "active"
+                    binding.updated_at = datetime.now(timezone.utc)
+                    await session.commit()
+                    logger.info("绑定状态已恢复: profile=%s (session_expired → active)", profile)
+        except Exception as e:
+            logger.warning("恢复绑定状态失败: %s", e)
+
     async def update_binding_credentials(self, profile: str, account_id: str = "",
                                           bot_token: str = "", bot_base_url: str = "") -> bool:
         """更新绑定记录中的微信凭证。"""
