@@ -8,6 +8,7 @@
 
 import argparse
 import asyncio
+from datetime import datetime, timezone
 import io
 import json
 import logging
@@ -398,7 +399,7 @@ def init_admin_token():
 @admin_app.middleware("http")
 async def admin_token_middleware(request: Request, call_next):
     """Admin Token 验证中间件。"""
-    if request.url.path == "/health":
+    if request.url.path == "/health" or request.url.path.startswith("/api/v1/health/"):
         return await call_next(request)
     token = request.headers.get("X-Admin-Token", "")
     if not secrets.compare_digest(token, ADMIN_TOKEN):
@@ -498,6 +499,43 @@ async def admin_health():
         "pool_stats": state.get_stats(),
         "containers": len(container_count),
     }
+
+
+@admin_app.get("/api/v1/health/bots")
+async def get_bots_health():
+    """返回所有 bot 容器的健康状态统计。"""
+    if not pg_store.enabled:
+        return {"error": "PG 未启用"}
+    try:
+        rows = await pg_store.get_bindings_with_heartbeat()
+        now = datetime.now(timezone.utc)
+        healthy, warning, dead = [], [], []
+        for r in rows:
+            hb = r.get("last_heartbeat_at")
+            mins = (now - hb).total_seconds() / 60 if hb else 999
+            bot = {
+                "profile": r["profile_name"],
+                "user_name": r.get("user_name", ""),
+                "lobster_name": r.get("lobster_name", ""),
+                "last_heartbeat": hb.isoformat() if hb else None,
+                "minutes_since_hb": round(mins, 1),
+                "status": "healthy" if mins < 10 else "warning" if mins < 30 else "dead",
+            }
+            if mins < 10:
+                healthy.append(bot)
+            elif mins < 30:
+                warning.append(bot)
+            else:
+                dead.append(bot)
+        return {
+            "total": len(rows),
+            "healthy": len(healthy),
+            "warning": len(warning),
+            "dead": len(dead),
+            "bots": healthy + warning + dead,
+        }
+    except Exception as e:
+        raise HTTPException(500, f"查询失败: {e}")
 
 
 # ═════════════════════════════════════════════════════════════════════

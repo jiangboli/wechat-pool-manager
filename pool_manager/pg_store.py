@@ -283,6 +283,33 @@ class PgStore:
             logger.warning("列出绑定失败: %s", e)
             return []
 
+    async def get_bindings_with_heartbeat(self) -> List[Dict[str, Any]]:
+        """列出所有绑定（含心跳、用户信息）。"""
+        if not self._enabled:
+            return []
+        try:
+            async with self._session() as session:
+                stmt = select(Binding).order_by(Binding.profile_name)
+                result = await session.execute(stmt)
+                bindings = result.scalars().all()
+                return [
+                    {
+                        "profile_name": b.profile_name,
+                        "user_name": b.user_name or "",
+                        "lobster_name": b.lobster_name or "",
+                        "phone": b.phone or "",
+                        "user_id": b.user_id or "",
+                        "status": b.status,
+                        "bound_at": b.bound_at,
+                        "last_heartbeat_at": b.last_heartbeat_at,
+                        "last_active_at": b.last_active_at,
+                    }
+                    for b in bindings
+                ]
+        except Exception as e:
+            logger.warning("查询绑定心跳失败: %s", e)
+            return []
+
     # ── 容器管理 ────────────────────────────────────────────────────
 
     async def create_container(self, binding_id: int, container_name: str,
