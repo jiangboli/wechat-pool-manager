@@ -509,21 +509,35 @@ async def get_bots_health():
     try:
         rows = await pg_store.get_bindings_with_heartbeat()
         now = datetime.now(timezone.utc)
-        healthy, warning, dead = [], [], []
+        healthy, warning, dead, session_expired = [], [], [], []
         for r in rows:
             hb = r.get("last_heartbeat_at")
             mins = (now - hb).total_seconds() / 60 if hb else 999
+            bind_status = r.get("status", "")
+            
+            # 优先检查绑定状态（session_expired 优先于心跳判断）
+            if bind_status == "session_expired":
+                status = "session_expired"
+            elif mins < 10:
+                status = "healthy"
+            elif mins < 30:
+                status = "warning"
+            else:
+                status = "dead"
+            
             bot = {
                 "profile": r["profile_name"],
                 "user_name": r.get("user_name", ""),
                 "lobster_name": r.get("lobster_name", ""),
                 "last_heartbeat": hb.isoformat() if hb else None,
                 "minutes_since_hb": round(mins, 1),
-                "status": "healthy" if mins < 10 else "warning" if mins < 30 else "dead",
+                "status": status,
             }
-            if mins < 10:
+            if status == "session_expired":
+                session_expired.append(bot)
+            elif status == "healthy":
                 healthy.append(bot)
-            elif mins < 30:
+            elif status == "warning":
                 warning.append(bot)
             else:
                 dead.append(bot)
@@ -532,7 +546,8 @@ async def get_bots_health():
             "healthy": len(healthy),
             "warning": len(warning),
             "dead": len(dead),
-            "bots": healthy + warning + dead,
+            "session_expired": len(session_expired),
+            "bots": healthy + warning + dead + session_expired,
         }
     except Exception as e:
         raise HTTPException(500, f"查询失败: {e}")
