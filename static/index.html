@@ -856,7 +856,7 @@ async function pollStatus(slotId) {
       setTimeout(refreshSlotImage, 500);
       return;
     }
-    if (data.qr_status === 'wait') {
+    if (data.qr_status === 'waiting') {
       setStatus('等待扫码...', 'waiting');
     }
     if (data.qr_url && data.qr_url !== lastQrUrl) {
