@@ -30,3 +30,5 @@ profiles/
 __pytest_cache__/
 .coverage
 htmlcov/
+.env
+.Hermes/
