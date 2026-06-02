@@ -1,0 +1,67 @@
+<!DOCTYPE html><html lang=zh><head><meta charset=utf-8>
+<title>Claw DO 看板</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+*{margin:0;padding:0;font-family:sans-serif}
+body{background:#0f172a;color:#e2e8f0;padding:24px}
+h1{font-size:22px;margin-bottom:20px;color:#f1f5f9}
+.g{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.g2{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:24px}
+.c{background:#1e293b;border-radius:12px;padding:20px;text-align:center}
+.c .n{font-size:30px;font-weight:700;margin-top:6px}
+.c .l{font-size:13px;color:#94a3b8}
+.r{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px}
+.b{background:#1e293b;border-radius:12px;padding:20px}
+.b h3{font-size:14px;margin-bottom:12px;color:#cbd5e1}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:8px 10px;border-bottom:1px solid #1e293b;text-align:left}
+th{color:#64748b;font-weight:500;background:#0f172a;border-radius:6px}
+td{font-family:monospace}
+@media(max-width:768px){.g{grid-template-columns:repeat(2,1fr)}.g2{grid-template-columns:repeat(3,1fr)}.r{grid-template-columns:1fr}}
+</style></head><body>
+<h1>Claw DO 看板 <span style="font-size:13px;color:#64748b" id=updateTime></span></h1>
+<div class=g>
+<div class=c><div class=l>总用户数</div><div class=n style=color:#818cf8 id=totalUsers>-</div></div>
+<div class=c><div class=l>今日新增</div><div class=n style=color:#34d399 id=todayNewUsers>-</div></div>
+<div class=c><div class=l>7天活跃</div><div class=n style=color:#a855f7 id=activeUsers>-</div></div>
+<div class=c><div class=l>平均延迟</div><div class=n style=color:#f59e0b id=avgLatency>-</div></div>
+</div>
+<div class=g2>
+<div class=c><div class=l>今日请求</div><div class=n style=color:#22c55e id=todayReqs>-</div></div>
+<div class=c><div class=l>Token消耗</div><div class=n style=color:#3b82f6 id=todayTokens>-</div></div>
+<div class=c><div class=l>错误率</div><div class=n id=errorRate>-</div></div>
+<div class=c><div class=l>错误数</div><div class=n id=errorCount>-</div></div>
+</div>
+<div class=r><div class=b><h3>请求排行 Top10（7天）</h3><table id=reqTable><tr><th>#</th><th>用户</th><th>请求</th></tr></table></div>
+<div class=b><h3>Token排行 Top10（7天）</h3><table id=tokenTable><tr><th>#</th><th>用户</th><th>Token</th></tr></table></div></div>
+<div class=r>
+<div class=b><h3>24h请求趋势</h3><canvas id=c1 style=max-height:250px></canvas></div>
+<div class=b><h3>模型分布</h3><canvas id=c2 style=max-height:250px></canvas></div>
+</div>
+<script>
+function fmt(n){return typeof n==='number'?n.toLocaleString():n}
+function fmtWan(n){if(typeof n!=='number')return n;return (n/10000).toFixed(1)+'\u4e07'}
+function update(p){
+  document.getElementById('totalUsers').textContent=fmt(p.total_users);
+  document.getElementById('todayNewUsers').textContent=fmt(p.today_new_users);
+  document.getElementById('activeUsers').textContent=fmt(p.active_users);
+  document.getElementById('avgLatency').textContent=fmt(p.avg_latency)+'ms';
+  document.getElementById('todayReqs').textContent=fmt(p.today_calls);
+  document.getElementById('todayTokens').textContent=fmtWan(p.today_tokens);
+  var er=p.today_calls>0?(p.today_errors/p.today_calls*100).toFixed(2):'0.00';
+  var ec=document.getElementById('errorRate');ec.textContent=er+'%';
+  ec.style.color=p.today_errors>0?'#ef4444':'#22c55e';
+  document.getElementById('errorCount').textContent=fmt(p.today_errors);
+  document.getElementById('errorCount').style.color=p.today_errors>0?'#ef4444':'#22c55e';
+  var rt=document.getElementById('reqTable');rt.innerHTML='<tr><th>#</th><th>\u7528\u6237</th><th>\u8bf7\u6c42</th></tr>';
+  p.top_req.forEach(function(r,i){rt.innerHTML+='<tr><td>'+(i+1)+'</td><td>'+r[0]+'</td><td>'+fmt(r[1])+'</td></tr>'});
+  var tt=document.getElementById('tokenTable');tt.innerHTML='<tr><th>#</th><th>\u7528\u6237</th><th>Token</th></tr>';
+  p.top_tok.forEach(function(r,i){tt.innerHTML+='<tr><td>'+(i+1)+'</td><td>'+r[0]+'</td><td>'+fmtWan(r[1])+'</td></tr>'});
+  if(window.c1)window.c1.destroy();if(window.c2)window.c2.destroy();
+  window.c1=new Chart(document.getElementById('c1'),{type:'line',data:{labels:p.trend_labels,datasets:[{label:'\u8bf7\u6c42',data:p.trend_data,borderColor:'#3b82f6',tension:0.3,fill:true,backgroundColor:'rgba(59,130,246,0.1)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#94a3b8',maxTicksLimit:10}},y:{ticks:{color:'#94a3b8'}}}}});
+  window.c2=new Chart(document.getElementById('c2'),{type:'pie',data:{labels:p.model_labels,datasets:[{data:p.model_data,backgroundColor:['#3b82f6','#22c55e','#f59e0b','#ef4444','#a855f7','#14b8a6']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#94a3b8',padding:10}}}}});
+  document.getElementById('updateTime').textContent=new Date().toLocaleTimeString();
+}
+async function load(){try{var r=await fetch('/api/v1/analytics/data');var d=await r.json();if(d&&d.today_calls!==undefined)update(d)}catch(e){}}
+load();setInterval(load,300000);
+</script></body></html>
