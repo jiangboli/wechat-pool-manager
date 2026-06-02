@@ -579,7 +579,7 @@ async def _start_bind():
     global hot_pool, pool_task, scheduler, health_task
 
     prefix = config.get("pool", {}).get("profile_prefix", "weixin-")
-    total = config.get("pool", {}).get("total_profiles", 100)
+    total = config.get("pool", {}).get("total_profiles", 500)
 
     state.load()
     scheduler = ds.DockerScheduler(config)
