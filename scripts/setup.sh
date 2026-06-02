@@ -94,6 +94,89 @@ if ! command -v docker &>/dev/null; then
 fi
 echo "  Docker $(docker --version)"
 
+# ── Docker 存储迁移（containerd 到大分区） ─────────────────────────────────
+echo "[1a/6] 💾 检查 Docker 存储分区..."
+DOCKER_ROOT=$(docker info 2>/dev/null | grep "Docker Root Dir" | awk '{print $NF}')
+echo "  当前 Docker Root Dir: $DOCKER_ROOT"
+
+# 检测 /home 分区（可能是大容量独立分区）
+HOME_DEV=$(df --output=source /home 2>/dev/null | tail -1)
+ROOT_DEV=$(df --output=source / 2>/dev/null | tail -1)
+
+if [ "$HOME_DEV" != "$ROOT_DEV" ] && [ -d "/home" ]; then
+  echo "  ✅ 检测到 /home 是独立分区（$HOME_DEV），空间充裕"
+
+  # 1. 配置 Docker data-root 到 /home
+  if echo "$DOCKER_ROOT" | grep -q "^/home"; then
+    echo "  ✅ Docker Root Dir 已在 /home 分区"
+  else
+    echo "  ⚠️  Docker Root Dir 在根分区，迁到 /home..."
+    DOCKER_CFG="/etc/docker/daemon.json"
+    sudo mkdir -p /etc/docker
+    echo "{\"data-root\": \"/home/dosh/docker-data\"}" | sudo tee "$DOCKER_CFG" > /dev/null
+    echo "  ✅ Docker data-root 配置完成"
+  fi
+
+  # 2. 配置 containerd root 到 /home
+  CONTAINERD_TARGET="/home/dosh/containerd-data"
+  CTRD_ROOT=""
+  if [ -f /etc/containerd/config.toml ]; then
+    CTRD_ROOT=$(grep "^root " /etc/containerd/config.toml | tr -d ' "' | cut -d= -f2)
+  fi
+
+  if [ "$CTRD_ROOT" = "$CONTAINERD_TARGET" ]; then
+    echo "  ✅ containerd root 已经在 $CONTAINERD_TARGET"
+  else
+    echo "  ⚠️  配置 containerd root → $CONTAINERD_TARGET..."
+    sudo mkdir -p /etc/containerd "$CONTAINERD_TARGET"
+
+    if command -v containerd &>/dev/null; then
+      containerd config default | sudo tee /etc/containerd/config.toml > /dev/null
+    fi
+
+    if [ -f /etc/containerd/config.toml ]; then
+      sudo sed -i "s|root = .*|root = \"$CONTAINERD_TARGET\"|" /etc/containerd/config.toml
+    else
+      echo "version = 3
+root = \"$CONTAINERD_TARGET\"
+state = '/run/containerd'" | sudo tee /etc/containerd/config.toml > /dev/null
+    fi
+    echo "  ✅ containerd 配置完成"
+  fi
+
+  # 3. 迁移现有数据（第一次部署时旧路径可能已有数据）
+  if [ -d "/var/lib/containerd" ] && [ ! -L "/var/lib/containerd" ]; then
+    CTRD_SIZE=$(sudo du -sm /var/lib/containerd/ 2>/dev/null | cut -f1)
+    if [ -n "$CTRD_SIZE" ] && [ "$CTRD_SIZE" -gt 0 ] 2>/dev/null; then
+      echo "  ⚠️  发现旧 containerd 数据（${CTRD_SIZE}MB），迁移中..."
+      sudo rsync -aHAXS /var/lib/containerd/ "$CONTAINERD_TARGET/"
+      echo "  ✅ 数据已迁移到 $CONTAINERD_TARGET"
+
+      echo "  重启 Docker 服务以加载新配置..."
+      sudo systemctl stop docker
+      sudo systemctl stop containerd
+      sleep 2
+      sudo systemctl start containerd
+      sudo systemctl start docker
+      sleep 3
+      echo "  ✅ Docker 重启完成"
+
+      sudo mv /var/lib/containerd /var/lib/containerd.bak
+      echo "  ✅ 旧数据已备份为 /var/lib/containerd.bak（确认正常后可删除）"
+    fi
+  fi
+else
+  echo "  ℹ️  /home 与 / 在同一个分区（或 /home 不存在），跳过存储迁移"
+  echo "     如需迁移，请手动配大容量外挂盘到 /home 后再运行 setup.sh"
+fi
+echo ""
+if ! command -v docker &>/dev/null; then
+  echo "  Docker 未安装！请先安装 Docker:"
+  echo "  curl -fsSL https://get.docker.com | bash"
+  exit 1
+fi
+echo "  Docker $(docker --version)"
+
 # ── 检查 Docker Compose ──────────────────────────────────────────────────
 if ! docker compose version &>/dev/null; then
   echo "  Docker Compose 不可用，请安装 Docker Compose v2+"
@@ -102,7 +185,7 @@ fi
 echo "  Docker Compose $(docker compose version)"
 
 # ── 准备配置和目录 ──────────────────────────────────────────────────────────
-echo "[2/6] 📁 准备配置文件和目录..."
+echo "[2/7] 📁 准备配置文件和目录..."
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # 创建数据目录基础结构
@@ -176,7 +259,7 @@ ENVEOF
 echo "  .env 已生成 (包含 ADMIN_TOKEN + HOME_DATA + CLAW_DO_DSN + MACHINE_IP)"
 
 # ── 构建 Docker 镜像 ──────────────────────────────────────────────────────
-echo "[3/6] 🔨 构建 Docker 镜像..."
+echo "[3/7] 🔨 构建 Docker 镜像..."
 
 echo "  构建 hermes-bot（微信用户容器镜像）..."
 docker build -f "$PROJECT_DIR/Dockerfile.bot" -t hermes-bot:latest "$PROJECT_DIR" 2>&1 | tail -3
@@ -185,11 +268,11 @@ echo "  构建 pool-manager（管理服务镜像）..."
 docker build -f "$PROJECT_DIR/Dockerfile.pool" -t pool-manager:latest "$PROJECT_DIR" 2>&1 | tail -3
 
 # ── 创建 Docker 网络 ──────────────────────────────────────────────────────
-echo "[4/6] 🌐 创建 Docker 网络..."
+echo "[4/7] 🌐 创建 Docker 网络..."
 docker network create hermes-pool-net 2>/dev/null || echo "  网络已存在"
 
 # ── 启动 3 个管理容器 ──────────────────────────────────────────────────────
-echo "[5/6] 🚀 启动 3 个管理容器..."
+echo "[5/7] 🚀 启动 3 个管理容器..."
 
 # 停止旧容器（兼容旧版单容器 + 新版 3 容器）
 for c in pool-manager pool-bind pool-admin pool-proxy; do
@@ -203,7 +286,7 @@ docker compose up -d 2>&1
 echo "  3 个容器已启动"
 
 # ── 修复数据目录权限 ──────────────────────────────────────────────────────
-echo "[6/6] 🔧 修复数据目录权限..."
+echo "[6/7] 🔧 修复数据目录权限..."
 sleep 2
 sudo chown -R "$(whoami):$(whoami)" "$DATA_ROOT" 2>/dev/null || echo "  提示：数据目录文件归 root 所有，可手动运行: sudo chown -R $(whoami):$(whoami) $DATA_ROOT"
 echo "  数据目录权限已修复"
