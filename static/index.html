@@ -532,7 +532,7 @@
 
       <div class="form-group" id="fgPhoneVerify">
         <label>手机号</label>
-        <input type="tel" id="inputPhoneVerify" placeholder="请输入手机号" maxlength="20" autocomplete="tel">
+        <input type="tel" id="inputPhoneVerify" placeholder="请输入手机号" maxlength="11" autocomplete="tel">
         <div class="error-msg" id="phoneVerifyError">请填写手机号</div>
       </div>
 
@@ -638,6 +638,11 @@ async function verifyPhone() {
 
   if (!phone) {
     errorEl.textContent = '请填写手机号';
+    document.getElementById('fgPhoneVerify').classList.add('has-error');
+    return;
+  }
+  if (!/^1[3-9]\d{9}$/.test(phone)) {
+    errorEl.textContent = '请输入正确的手机号码（11位）';
     document.getElementById('fgPhoneVerify').classList.add('has-error');
     return;
   }

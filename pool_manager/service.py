@@ -13,6 +13,7 @@ import io
 import json
 import logging
 import os
+import re
 import secrets
 import sys
 from pathlib import Path
@@ -144,6 +145,8 @@ async def check_phone(phone: str = ""):
     """验证手机号是否已全局绑定。"""
     if not phone:
         raise HTTPException(400, "手机号必填")
+    if not re.match(r'^1[3-9]\d{9}$', phone):
+        raise HTTPException(400, "手机号格式错误")
     if pg_store.enabled:
         existing = await pg_store.find_binding_by_phone(phone)
         if existing:
@@ -165,6 +168,8 @@ async def register_binding(req: Request):
     user_name = (body.get("user_name") or "").strip()
     if not phone or not lobster_name or not user_name:
         raise HTTPException(400, "手机号、龙虾名、用户名均为必填项")
+    if not re.match(r'^1[3-9]\d{9}$', phone):
+        raise HTTPException(400, "手机号格式错误")
     # 手机号去重检查（全局）
     if pg_store.enabled:
         existing = await pg_store.find_binding_by_phone(phone)
