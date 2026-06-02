@@ -216,6 +216,8 @@ docker:
     memory_reservation: "128m"
     cpu_shares: 256
     cpu_quota: 50000
+    pids_limit: 1024
+    ulimit_nofile: 2048
 
 proxy:
   default_provider: "deepseek"

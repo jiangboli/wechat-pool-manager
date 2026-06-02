@@ -35,6 +35,8 @@ DEFAULT_MEMORY_RESERVATION = "128m"
 DEFAULT_CPU_SHARES = 256
 DEFAULT_CPU_QUOTA = 50000
 DEFAULT_MAX_CONTAINERS = 500
+DEFAULT_PIDS_LIMIT = 1024
+DEFAULT_ULIMIT_NOFILE = 2048
 DEFAULT_RESTART_POLICY = {"Name": "unless-stopped"}
 
 
@@ -95,6 +97,8 @@ class DockerScheduler:
         self.memory_reservation = defaults.get("memory_reservation", DEFAULT_MEMORY_RESERVATION)
         self.cpu_shares = defaults.get("cpu_shares", DEFAULT_CPU_SHARES)
         self.cpu_quota = defaults.get("cpu_quota", DEFAULT_CPU_QUOTA)
+        self.pids_limit = defaults.get("pids_limit", DEFAULT_PIDS_LIMIT)
+        self.ulimit_nofile = defaults.get("ulimit_nofile", DEFAULT_ULIMIT_NOFILE)
         self.restart_policy = DEFAULT_RESTART_POLICY
 
         self._client: Optional[docker.DockerClient] = None
@@ -350,6 +354,8 @@ send_message(target="origin", message="⏳ 已用时 2 分钟...")
                 mem_reservation=self.memory_reservation,
                 cpu_shares=self.cpu_shares,
                 cpu_quota=self.cpu_quota,
+                pids_limit=self.pids_limit,
+                ulimits=[docker.types.Ulimit(name="nofile", soft=self.ulimit_nofile, hard=self.ulimit_nofile)],
                 environment={"TZ": "Asia/Shanghai"},
                 volumes={
                                     hdir_host: {
@@ -617,6 +623,36 @@ send_message(target="origin", message="⏳ 已用时 2 分钟...")
                             self.create_container(profile)
                     except Exception as e:
                         logger.warning("[%s] 检查容器存储大小失败: %s", c.name, e)
+
+                    # 检查异常网络连接（TCP 连接数超过阈值则重建）
+                    try:
+                        import subprocess
+                        proc = subprocess.run(
+                            ["docker", "exec", c.name, "cat", "/proc/net/tcp"],
+                            capture_output=True, text=True, timeout=5
+                        )
+                        if proc.returncode == 0:
+                            lines = proc.stdout.strip().split("\n")
+                            established = 0
+                            for line in lines[1:]:
+                                parts = line.strip().split()
+                                if len(parts) >= 4 and parts[3] == "01":
+                                    established += 1
+                            if established > 200:
+                                logger.warning(
+                                    "[%s] 网络连接异常: %d 个 TCP 连接 (正常 < 20)，重建容器...",
+                                    c.name, established
+                                )
+                                c.kill()
+                                c.remove()
+                                self.create_container(profile)
+                            elif established > 50:
+                                logger.warning(
+                                    "[%s] 网络连接偏高: %d 个 TCP 连接 (正常 < 20)",
+                                    c.name, established
+                                )
+                    except Exception as e:
+                        logger.warning("[%s] 检查容器网络连接失败: %s", c.name, e)
                     continue
 
                 if status == "exited":
