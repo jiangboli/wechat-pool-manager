@@ -65,68 +65,6 @@ STATIC_DIR = os.path.join(os.path.dirname(__file__), "../static")
 if os.path.exists(STATIC_DIR):
     bind_app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-# ── 看板 Basic Auth ──────────────────────────────────────────────────
-ANALYTICS_PASSWORD = os.environ.get("ANALYTICS_PASSWORD", "")
-
-
-@bind_app.middleware("http")
-async def analytics_basic_auth(request: Request, call_next):
-    if request.url.path == "/static/analytics.html":
-        auth = request.headers.get("Authorization", "")
-        if not auth.startswith("Basic "):
-            return Response(
-                status_code=401,
-                headers={"WWW-Authenticate": 'Basic realm="Analytics"'},
-                content="需要登录认证",
-            )
-        try:
-            import base64
-            creds = base64.b64decode(auth[6:]).decode()
-            _, pw = creds.split(":", 1)
-        except Exception:
-            return Response(
-                status_code=401,
-                headers={"WWW-Authenticate": 'Basic realm="Analytics"'},
-            )
-        if not ANALYTICS_PASSWORD or not secrets.compare_digest(pw, ANALYTICS_PASSWORD):
-            return Response(
-                status_code=401,
-                headers={"WWW-Authenticate": 'Basic realm="Analytics"'},
-            )
-    return await call_next(request)
-
-
-@bind_app.get("/api/v1/analytics/data")
-async def get_analytics_data():
-    import psycopg2
-    dsn = "host=125.67.215.86 dbname=claw_do user=claw_do_user password=dosh_13579"
-    conn = psycopg2.connect(dsn)
-    c = conn.cursor()
-    c.execute("SELECT count(*), COALESCE(SUM(total_tokens),0), count(*) FILTER (WHERE error_type != ''), COALESCE(round(AVG(latency_ms)),0) FROM analytics.proxy_api_calls WHERE created_at >= CURRENT_DATE")
-    r = c.fetchone()
-    data = {'today_calls': r[0], 'today_tokens': r[1], 'today_errors': r[2], 'avg_latency': r[3]}
-    c.execute("SELECT count(DISTINCT user_id) FROM analytics.proxy_api_calls WHERE created_at >= CURRENT_DATE - 7")
-    data['active_users'] = c.fetchone()[0]
-
-    c.execute("SELECT count(DISTINCT user_id) FROM analytics.proxy_api_calls")
-    data['total_users'] = c.fetchone()[0]
-    c.execute("SELECT count(*) FROM (SELECT user_id FROM analytics.proxy_api_calls WHERE created_at >= CURRENT_DATE GROUP BY user_id HAVING min(created_at) >= CURRENT_DATE) t")
-    data['today_new_users'] = c.fetchone()[0]
-    c.execute("SELECT user_id, count(*) FROM analytics.proxy_api_calls WHERE created_at >= CURRENT_DATE - 7 GROUP BY user_id ORDER BY count(*) DESC LIMIT 10")
-    data['top_req'] = [[r[0], r[1]] for r in c.fetchall()]
-    c.execute("SELECT user_id, COALESCE(SUM(total_tokens),0) FROM analytics.proxy_api_calls WHERE created_at >= CURRENT_DATE - 7 GROUP BY user_id ORDER BY SUM(total_tokens) DESC LIMIT 10")
-    data['top_tok'] = [[r[0], int(r[1])] for r in c.fetchall()]
-    c.execute("SELECT to_char(created_at, 'MM-DD HH24'), count(*) FROM analytics.proxy_api_calls WHERE created_at >= CURRENT_DATE - 1 GROUP BY 1 ORDER BY 1")
-    rows = c.fetchall()
-    data['trend_labels'] = [r[0] for r in rows]
-    data['trend_data'] = [r[1] for r in rows]
-    c.execute("SELECT model, count(*) FROM analytics.proxy_api_calls WHERE created_at >= CURRENT_DATE - 7 GROUP BY model ORDER BY count(*) DESC")
-    rows = c.fetchall()
-    data['model_labels'] = [r[0] for r in rows]
-    data['model_data'] = [r[1] for r in rows]
-    conn.close()
-    return data
-
 
 # ═════════════════════════════════════════════════════════════════════
 # 绑定页 API（bind_app）
