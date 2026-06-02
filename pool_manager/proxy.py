@@ -1,3 +1,4 @@
+ 
 """LLM 转发代理——将 wx 用户的 LLM 请求转发到真实 API。
 
 增强功能（v3）：
@@ -19,6 +20,7 @@ from collections import defaultdict
 from typing import Dict, List, Optional
 
 import httpx
+from pool_manager import analytics
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import StreamingResponse
 
@@ -127,6 +129,10 @@ def init_proxy(proxy_config: dict = None, pg_store=None):
     max_concurrent = _config.get("max_concurrent_requests", 50)
     rate_limit = _config.get("rate_limit_per_ip", 60)
     _init_rate_limiter(max_concurrent=max_concurrent, rate_limit=rate_limit)
+
+    # 初始化 analytics
+    pg_config = proxy_config.get("analytics", {}) if proxy_config else {}
+    analytics.init_analytics(pg_config)
 
     if pg_store and pg_store.enabled:
         logger.info("LLM Proxy: 使用 PG 凭证池（启动后异步加载）")
@@ -450,6 +456,7 @@ async def _do_proxy(request: Request, body: dict) -> Response:
 
 async def _do_proxy_inner(request: Request, body: dict, client_ip: str) -> Response:
     """实际的代理转发逻辑（不含速率限制和排队）。"""
+    start_time = time.time()
     model = body.get("model", "")
     providers_to_try = []
 
@@ -486,12 +493,12 @@ async def _do_proxy_inner(request: Request, body: dict, client_ip: str) -> Respo
         try:
             client = _get_client()
             if stream:
-                result = await _proxy_stream(client, target_url, body, headers)
+                result = await _proxy_stream(client, target_url, body, headers, start_time, client_ip, model)
                 # 记录成功
                 _record_success(provider)
                 return result
             else:
-                result = await _proxy_sync(client, target_url, body, headers)
+                result = await _proxy_sync(client, target_url, body, headers, start_time, client_ip, model)
                 _record_success(provider)
                 return result
         except Exception as e:
@@ -501,6 +508,18 @@ async def _do_proxy_inner(request: Request, body: dict, client_ip: str) -> Respo
             continue
 
     # 所有 provider 都失败
+    latency_ms = int((time.time() - start_time) * 1000)
+    msg_count = 0
+    msgs = body.get("messages")
+    if isinstance(msgs, list):
+        msg_count = len(msgs)
+    analytics.enqueue_record({
+        "user_id": client_ip[:64], "model": model[:64],
+        "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+        "latency_ms": latency_ms, "msg_count": msg_count,
+        "status": "error", "error_type": "all_providers_down",
+        "streaming": body.get("stream", False),
+    })
     return Response(
         content=json.dumps({"error": f"所有 provider 均不可用: {last_error}"}),
         status_code=502,
@@ -530,15 +549,44 @@ def _record_error_for_provider(provider: str):
 
 
 async def _proxy_stream(client: httpx.AsyncClient, url: str,
-                        body: dict, headers: dict) -> StreamingResponse:
+                        body: dict, headers: dict, start_time: float = 0, client_ip: str = "", model: str = "") -> StreamingResponse:
     """流式转发——SSE 逐 token 返回。"""
     async def generate():
+        last_data_line = ""
         try:
             async with client.stream("POST", url, json=body, headers=headers) as resp:
                 async for chunk in resp.aiter_bytes():
                     yield chunk
+                    dec = chunk.decode(errors="replace")
+                    if dec.startswith("data: ") and "[DONE]" not in dec:
+                        last_data_line = dec[6:].strip()
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n".encode()
+        finally:
+            if start_time > 0:
+                latency_ms = int((time.time() - start_time) * 1000)
+                msg_count = 0
+                msgs = body.get("messages")
+                if isinstance(msgs, list):
+                    msg_count = len(msgs)
+                stream_tokens = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+                if last_data_line:
+                    try:
+                        import json as _json
+                        ld = _json.loads(last_data_line)
+                        u = ld.get("usage", {})
+                        if isinstance(u, dict):
+                            stream_tokens = u
+                    except Exception:
+                        pass
+                analytics.enqueue_record({
+                    "user_id": client_ip[:64], "model": model[:64],
+                    "prompt_tokens": stream_tokens.get("prompt_tokens", 0),
+                    "completion_tokens": stream_tokens.get("completion_tokens", 0),
+                    "total_tokens": stream_tokens.get("total_tokens", 0),
+                    "latency_ms": latency_ms, "msg_count": msg_count,
+                    "status": "success", "error_type": "", "streaming": True,
+                })
             yield DONE_MARKER
     return StreamingResponse(
         generate(),
@@ -552,9 +600,33 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
 
 
 async def _proxy_sync(client: httpx.AsyncClient, url: str,
-                      body: dict, headers: dict) -> Response:
+                      body: dict, headers: dict, start_time: float = 0, client_ip: str = "", model: str = "") -> Response:
     """非流式转发——完整返回。"""
     resp = await client.post(url, json=body, headers=headers)
+    if start_time > 0:
+        latency_ms = int((time.time() - start_time) * 1000)
+        msg_count = 0
+        msgs = body.get("messages")
+        if isinstance(msgs, list):
+            msg_count = len(msgs)
+        usage_info = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        try:
+            rd = json.loads(resp.content)
+            u = rd.get("usage", {})
+            if isinstance(u, dict):
+                usage_info = u
+        except Exception:
+            pass
+        analytics.enqueue_record({
+            "user_id": client_ip[:64], "model": model[:64],
+            "prompt_tokens": usage_info.get("prompt_tokens", 0),
+            "completion_tokens": usage_info.get("completion_tokens", 0),
+            "total_tokens": usage_info.get("total_tokens", 0),
+            "latency_ms": latency_ms, "msg_count": msg_count,
+            "status": "error" if resp.status_code >= 400 else "success",
+            "error_type": f"http_{resp.status_code}" if resp.status_code >= 400 else "",
+            "streaming": False,
+        })
     return Response(
         content=resp.content,
         status_code=resp.status_code,
