@@ -13,6 +13,7 @@ import io
 import json
 import logging
 import os
+import hashlib
 import secrets
 import sys
 from pathlib import Path
@@ -63,6 +64,67 @@ proxy_app = FastAPI(title="Pool Manager - LLM Proxy")
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "../static")
 if os.path.exists(STATIC_DIR):
     bind_app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+# ── 看板登录配置 ──────────────────────────────────────────────────────
+ANALYTICS_PASSWORD = os.environ.get("ANALYTICS_PASSWORD", "")
+
+LOGIN_PAGE = """<!DOCTYPE html><html lang=zh><head>
+<meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<title>看板登录</title>
+<style>
+*{margin:0;padding:0;font-family:sans-serif}
+body{background:#0f172a;color:#e2e8f0;display:flex;align-items:center;justify-content:center;height:100vh}
+.c{background:#1e293b;padding:40px;border-radius:16px;width:340px;text-align:center}
+.c h1{font-size:20px;margin-bottom:24px;color:#f1f5f9}
+.c input{width:100%;padding:12px 16px;background:#334155;border:1px solid #475569;border-radius:8px;color:#e2e8f0;font-size:15px;box-sizing:border-box;outline:none}
+.c input:focus{border-color:#3b82f6}
+.c button{width:100%;padding:12px;background:#3b82f6;border:none;border-radius:8px;color:#fff;font-size:15px;cursor:pointer;margin-top:16px}
+.c button:hover{background:#2563eb}
+.c .err{color:#ef4444;font-size:13px;margin-top:12px;display:none}
+</style></head><body>
+<div class=c>
+<h1>🦞 Pool Proxy Analytics</h1>
+<input id=p type=password placeholder="输入密码" onkeydown="if(event.key=='Enter')login()">
+<button onclick="login()">登录</button>
+<div id=e class=err>密码错误</div>
+</div>
+<script>
+function login(){const p=document.getElementById('p').value;fetch('/api/v1/analytics/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:p})}).then(r=>{if(r.ok){window.location.href='/analytics'}else{document.getElementById('e').style.display='block'}}).catch(()=>{document.getElementById('e').style.display='block'})}
+</script></body></html>"""
+
+
+@bind_app.get("/analytics")
+async def analytics_page(request: Request):
+    token = request.cookies.get("analytics_token", "")
+    expected = hashlib.sha256(ANALYTICS_PASSWORD.encode()).hexdigest()
+    if token and secrets.compare_digest(token, expected):
+        html_path = os.path.join(STATIC_DIR, "analytics.html")
+        if os.path.exists(html_path):
+            return HTMLResponse(
+                content=open(html_path, encoding="utf-8").read(),
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+            )
+        return HTMLResponse("<h1>看板文件不存在</h1>", status_code=404)
+    return HTMLResponse(content=LOGIN_PAGE, headers={"Cache-Control": "no-cache"})
+
+
+@bind_app.post("/api/v1/analytics/login")
+async def analytics_login(req: Request):
+    body = await req.json()
+    password = body.get("password", "")
+    if not password or not ANALYTICS_PASSWORD or not secrets.compare_digest(ANALYTICS_PASSWORD, password):
+        raise HTTPException(status_code=403, detail="密码错误")
+    expected = hashlib.sha256(ANALYTICS_PASSWORD.encode()).hexdigest()
+    resp = JSONResponse({"ok": True})
+    resp.set_cookie(
+        key="analytics_token",
+        value=expected,
+        max_age=86400,
+        httponly=True,
+        samesite="lax",
+        path="/analytics",
+    )
+    return resp
 
 
 # ═════════════════════════════════════════════════════════════════════
