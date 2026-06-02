@@ -52,7 +52,7 @@ def _get_client() -> httpx.AsyncClient:
     return _http_client
 
 
-def _init_rate_limiter(max_concurrent: int = 50, rate_limit: int = 5):
+def _init_rate_limiter(max_concurrent: int = 50, rate_limit: int = 60):
     """初始化并发控制和速率限制。"""
     global _request_semaphore, RATE_LIMIT_MAX, MAX_CONCURRENT
     MAX_CONCURRENT = max_concurrent
@@ -125,7 +125,7 @@ def init_proxy(proxy_config: dict = None, pg_store=None):
 
     # 初始化速率限制
     max_concurrent = _config.get("max_concurrent_requests", 50)
-    rate_limit = _config.get("rate_limit_per_ip", 5)
+    rate_limit = _config.get("rate_limit_per_ip", 60)
     _init_rate_limiter(max_concurrent=max_concurrent, rate_limit=rate_limit)
 
     if pg_store and pg_store.enabled:

@@ -24,6 +24,7 @@ docker:
 proxy:
   default_provider: "deepseek"
   fallback_providers: ["alibaba"]
+  rate_limit_per_ip: 60                # 每个容器 IP 每分钟请求上限
   circuit_breaker:
     max_errors: 5
     recovery_window: 60
