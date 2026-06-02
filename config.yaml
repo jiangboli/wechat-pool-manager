@@ -14,7 +14,7 @@ docker:
   network: "hermes-pool-net"
   data_root: "/home/dosh/data/"
   data_root_host: "/home/dosh/data/"
-  max_containers: 80
+  max_containers: 450
   container_defaults:
     memory_limit: "2g"
     memory_reservation: "128m"
