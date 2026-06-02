@@ -11,6 +11,7 @@ services:
     environment:
       CLAW_DO_DSN: "${CLAW_DO_DSN}"
       MACHINE_IP: "${MACHINE_IP:-auto}"
+      ANALYTICS_PASSWORD: "${ANALYTICS_PASSWORD}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${HOME_DATA:-/home/dosh/data}:/home/dosh/data
@@ -67,18 +68,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 5s
-
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    ports:
-      - "3000:3000"
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: "clawdo2026"
-      GF_INSTALL_PLUGINS: "grafana-piechart-panel"
-    networks:
-      - hermes-pool-net
-    restart: unless-stopped
 
 networks:
   hermes-pool-net:

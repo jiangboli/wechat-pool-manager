@@ -26,7 +26,7 @@ _analytics_task: Optional[asyncio.Task] = None
 DEFAULT_PG_HOST = os.environ.get("ANALYTICS_PG_HOST", "125.67.215.86")
 DEFAULT_PG_PORT = int(os.environ.get("ANALYTICS_PG_PORT", "5432"))
 DEFAULT_PG_USER = os.environ.get("ANALYTICS_PG_USER", "claw_do_user")
-DEFAULT_PG_PASSWORD = os.environ.get("ANALYTICS_PG_PASSWORD", "8436bebcec116cc813891214e467d282")
+DEFAULT_PG_PASSWORD = os.environ.get("ANALYTICS_PG_PASSWORD", "dosh_13579")
 DEFAULT_PG_DB = os.environ.get("ANALYTICS_PG_DB", "claw_do")
 
 # 批量写入配置
