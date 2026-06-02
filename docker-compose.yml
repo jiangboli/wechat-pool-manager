@@ -16,6 +16,23 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${HOME_DATA:-/home/dosh/data}:/home/dosh/data
+
+  # ── Grafana 看板 ──────────────────────────────────────────────
+  # 用户数据分析看板
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: "clawdo2026"
+      GF_INSTALL_PLUGINS: "grafana-piechart-panel"
+    volumes:
+      - /home/dosh/data/grafana:/var/lib/grafana
+    networks:
+      - hermes-pool-net
+    restart: unless-stopped
+
     networks:
       - hermes-pool-net
     restart: unless-stopped
