@@ -76,8 +76,6 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: "clawdo2026"
       GF_INSTALL_PLUGINS: "grafana-piechart-panel"
-    volumes:
-      - /home/dosh/data/grafana:/var/lib/grafana
     networks:
       - hermes-pool-net
     restart: unless-stopped
