@@ -13,9 +13,9 @@ DEFAULT_CONFIG_PATH = os.path.expanduser("~/.hermes/wechat-pool/config.yaml")
 # ── 代码默认值 ──────────────────────────────────────────────────────────
 DEFAULTS: Dict[str, Any] = {
     "pool": {
-        "total_profiles": 100,
+        "total_profiles": 500,
         "hot_pool_size": 5,
-        "max_bound_gateways": 80,
+        "max_bound_gateways": 500,
         "profile_prefix": "weixin-",
         "max_qr_refresh": 3,
     },

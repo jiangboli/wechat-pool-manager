@@ -1,8 +1,8 @@
 # WeChat Gateway Pool Manager v4 — 3 容器模式
 pool:
-  total_profiles: 100
+  total_profiles: 500
   hot_pool_size: 5
-  max_bound_gateways: 80
+  max_bound_gateways: 500
   profile_prefix: "weixin-"
   max_qr_refresh: 3
 
@@ -14,7 +14,7 @@ docker:
   network: "hermes-pool-net"
   data_root: "/home/dosh/data/"
   data_root_host: "/home/dosh/data/"
-  max_containers: 450
+  max_containers: 500
   container_defaults:
     memory_limit: "2g"
     memory_reservation: "128m"
