@@ -72,7 +72,7 @@ services:
     image: grafana/grafana:latest
     container_name: grafana
     ports:
-      - "127.0.0.1:3000:3000"
+      - "3000:3000"
     environment:
       GF_SECURITY_ADMIN_PASSWORD: "clawdo2026"
       GF_INSTALL_PLUGINS: "grafana-piechart-panel"
