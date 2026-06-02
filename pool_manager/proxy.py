@@ -20,6 +20,7 @@ from collections import defaultdict
 from typing import Dict, List, Optional
 
 import httpx
+import docker
 from pool_manager import analytics
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import StreamingResponse
@@ -31,6 +32,80 @@ DONE_MARKER = b"data: [DONE]\n\n"
 
 # 共享 HTTPX 客户端（连接池 + keepalive）
 _http_client: Optional[httpx.AsyncClient] = None
+
+
+# ── Docker IP -> 容器名反查 ───────────────────────────────────────────
+_docker_client: Optional[docker.DockerClient] = None
+_ip_cache: Dict[str, dict] = {}
+_ip_cache_ts = 0.0
+_IP_CACHE_TTL = 300
+
+def _get_docker_client() -> Optional[docker.DockerClient]:
+    global _docker_client
+    if _docker_client is None:
+        try:
+            _docker_client = docker.from_env()
+        except Exception as e:
+            logger.warning("Docker å®¢æ·ç«¯åå§åå¤±è´¥: %s", e)
+    return _docker_client
+
+def _refresh_ip_cache():
+    global _ip_cache, _ip_cache_ts
+    now = time.time()
+    if now - _ip_cache_ts < _IP_CACHE_TTL:
+        return
+    client = _get_docker_client()
+    if not client:
+        return
+    try:
+        network = client.networks.get("hermes-pool-net")
+        containers_info = network.attrs.get("Containers", {})
+        cache = {}
+        for container_id, info in containers_info.items():
+            ip = info.get("IPv4Address", "").split("/")[0]
+            name = info.get("Name", "")
+            if ip and name:
+                cache[ip] = name
+        if cache:
+            _ip_cache = cache
+            _ip_cache_ts = now
+            logger.info("IP ç¼å­å·²å·æ°: %d ä¸ªå®¹å¨", len(cache))
+    except Exception as e:
+        logger.warning("å·æ° IP ç¼å­å¤±è´¥: %s", e)
+
+def _lookup_container_ip(ip: str) -> str:
+    _refresh_ip_cache()
+    name = _ip_cache.get(ip, "")
+    return name.replace("hermes-", "") if name else ""
+
+def _enrich_record(record: dict, body: dict, client_ip: str) -> dict:
+    try:
+        record["topic"] = analytics.infer_topic(body)
+    except Exception:
+        record["topic"] = "å¶ä»"
+    try:
+        profile = _lookup_container_ip(client_ip)
+        if profile:
+            import psycopg2
+            conn = psycopg2.connect(
+                host=os.environ.get("ANALYTICS_PG_HOST", "125.67.215.86"),
+                port=int(os.environ.get("ANALYTICS_PG_PORT", "5432")),
+                user=os.environ.get("ANALYTICS_PG_USER", "claw_do_user"),
+                password=os.environ.get("ANALYTICS_PG_PASSWORD", "dosh_13579"),
+                dbname=os.environ.get("ANALYTICS_PG_DB", "claw_do"),
+            )
+            cur = conn.cursor()
+            cur.execute("SELECT user_name, phone, lobster_name FROM public.bindings WHERE profile_name = %s", (profile,))
+            row = cur.fetchone()
+            if row:
+                record["username"] = row[0] or ""
+                record["phone"] = row[1] or ""
+                record["bot_name"] = row[2] or ""
+            cur.close()
+            conn.close()
+    except Exception as e:
+        logger.debug("è¡¥åç¨æ·ä¿¡æ¯å¤±è´¥: %s", e)
+    return record
 
 # 并发控制——最多同时处理 N 个 LLM 请求
 _request_semaphore: Optional[asyncio.Semaphore] = None
@@ -513,13 +588,13 @@ async def _do_proxy_inner(request: Request, body: dict, client_ip: str) -> Respo
     msgs = body.get("messages")
     if isinstance(msgs, list):
         msg_count = len(msgs)
-    analytics.enqueue_record({
+    analytics.enqueue_record(_enrich_record({
         "user_id": client_ip[:64], "model": model[:64],
         "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
         "latency_ms": latency_ms, "msg_count": msg_count,
         "status": "error", "error_type": "all_providers_down",
         "streaming": body.get("stream", False),
-    })
+    }, body, client_ip))
     return Response(
         content=json.dumps({"error": f"所有 provider 均不可用: {last_error}"}),
         status_code=502,
@@ -579,14 +654,14 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
                             stream_tokens = u
                     except Exception:
                         pass
-                analytics.enqueue_record({
+                analytics.enqueue_record(_enrich_record({
                     "user_id": client_ip[:64], "model": model[:64],
                     "prompt_tokens": stream_tokens.get("prompt_tokens", 0),
                     "completion_tokens": stream_tokens.get("completion_tokens", 0),
                     "total_tokens": stream_tokens.get("total_tokens", 0),
                     "latency_ms": latency_ms, "msg_count": msg_count,
                     "status": "success", "error_type": "", "streaming": True,
-                })
+                }, body, client_ip))
             yield DONE_MARKER
     return StreamingResponse(
         generate(),
@@ -617,7 +692,7 @@ async def _proxy_sync(client: httpx.AsyncClient, url: str,
                 usage_info = u
         except Exception:
             pass
-        analytics.enqueue_record({
+        analytics.enqueue_record(_enrich_record({
             "user_id": client_ip[:64], "model": model[:64],
             "prompt_tokens": usage_info.get("prompt_tokens", 0),
             "completion_tokens": usage_info.get("completion_tokens", 0),
@@ -626,7 +701,7 @@ async def _proxy_sync(client: httpx.AsyncClient, url: str,
             "status": "error" if resp.status_code >= 400 else "success",
             "error_type": f"http_{resp.status_code}" if resp.status_code >= 400 else "",
             "streaming": False,
-        })
+        }, body, client_ip))
     return Response(
         content=resp.content,
         status_code=resp.status_code,

@@ -135,7 +135,7 @@ async def _batch_insert(records: list):
         params = []
         for r in records:
             values.append(
-                "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
             )
             params.extend([
                 r.get("user_id", ""),
@@ -150,11 +150,15 @@ async def _batch_insert(records: list):
                 r.get("streaming", False),
                 r.get("topic", "其他"),
                 r.get("created_at", time.strftime("%Y-%m-%dT%H:%M:%S")),
+                r.get("username", ""),
+                r.get("phone", ""),
+                r.get("bot_name", ""),
             ])
 
         sql = f"""INSERT INTO analytics.proxy_api_calls
             (user_id, model, prompt_tokens, completion_tokens, total_tokens,
-             latency_ms, msg_count, status, error_type, streaming, topic, created_at)
+             latency_ms, msg_count, status, error_type, streaming, topic, created_at,
+             username, phone, bot_name)
             VALUES {','.join(values)}"""
 
         cur.execute(sql, params)
