@@ -92,6 +92,23 @@ services:
       retries: 3
       start_period: 5s
 
+
+  # ── Grafana 看板 ──────────────────────────────────────────────
+  # 用户数据分析看板 (analytics.analytics schema)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: "clawdo2026"
+      GF_INSTALL_PLUGINS: "grafana-piechart-panel"
+    volumes:
+      - /home/dosh/data/grafana:/var/lib/grafana
+    networks:
+      - hermes-pool-net
+    restart: unless-stopped
+
 # ── 共享网络 ────────────────────────────────────────────────────
 # hermes-weixin-NNN 容器也加入此网络，通过 DNS 名 "pool-proxy" 访问 LLM Proxy
 networks:
