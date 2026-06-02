@@ -591,6 +591,32 @@ send_message(target="origin", message="⏳ 已用时 2 分钟...")
                                 await pg_store.restore_binding_if_expired(profile)
                         except Exception as e:
                             logger.warning("[%s] 检查微信连接日志失败: %s", profile, e)
+
+                    # 检查容器存储大小（可写层 + 数据目录 > 10GB 则重建）
+                    try:
+                        size_rw = c.attrs.get("SizeRw", 0) or 0
+                        data_dir = _profile_dir(profile)
+                        if os.path.exists(data_dir):
+                            import subprocess
+                            result = subprocess.run(
+                                ["du", "-sb", data_dir],
+                                capture_output=True, text=True, timeout=5
+                            )
+                            data_size = int(result.stdout.split()[0]) if result.returncode == 0 else 0
+                        else:
+                            data_size = 0
+                        total_gb = (size_rw + data_size) / (1024**3)
+                        STORAGE_LIMIT_GB = 10
+                        if total_gb > STORAGE_LIMIT_GB:
+                            logger.warning(
+                                "[%s] 存储超限: 可写层 %.2fGB + 数据 %.2fGB = %.2fGB (上限 %dGB)，重建容器...",
+                                c.name, size_rw/(1024**3), data_size/(1024**3), total_gb, STORAGE_LIMIT_GB
+                            )
+                            c.kill()
+                            c.remove()
+                            self.create_container(profile)
+                    except Exception as e:
+                        logger.warning("[%s] 检查容器存储大小失败: %s", c.name, e)
                     continue
 
                 if status == "exited":
