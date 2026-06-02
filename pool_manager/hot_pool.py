@@ -380,7 +380,7 @@ class HotPool:
                                     container_id="",
                                     image="hermes-bot:latest",
                                     status="running",
-                                    memory_limit="2g",
+                                    memory_limit="512m",
                                 )
                             await pg_store.log_qr_event(profile, "confirmed", slot.user_id)
                     else:
