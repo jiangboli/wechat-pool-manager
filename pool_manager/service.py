@@ -343,7 +343,8 @@ async def get_qr_image(slot_id: str):
 
 @bind_app.get("/api/v1/pool/stats")
 async def get_pool_stats():
-    return state.get_stats()
+    mb = config.get("pool", {}).get("max_bound_gateways", 500)
+    return state.get_stats(max_bound=mb)
 
 
 @bind_app.get("/health")
@@ -353,7 +354,7 @@ async def bind_health():
         "service": "pool-bind",
         "status": "ok",
         "version": "3.0.0",
-        "pool_stats": state.get_stats(),
+        "pool_stats": state.get_stats(max_bound=config.get("pool", {}).get("max_bound_gateways", 500)),
         "containers": len(container_count),
     }
 
@@ -501,7 +502,7 @@ async def admin_health():
         "service": "pool-admin",
         "status": "ok",
         "version": "3.0.0",
-        "pool_stats": state.get_stats(),
+        "pool_stats": state.get_stats(max_bound=config.get("pool", {}).get("max_bound_gateways", 500)),
         "containers": len(container_count),
     }
 

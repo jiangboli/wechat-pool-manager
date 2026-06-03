@@ -944,7 +944,7 @@ async function fetchStats() {
     if (!resp.ok) return;
     const data = await resp.json();
     document.getElementById('stats').textContent =
-      '已绑定 ' + data.bound + ' / 总 ' + data.total_profiles + ' 个席位';
+      '已绑定 ' + data.bound + ' / 总 ' + (data.max_bound || data.total_profiles) + ' 个席位';
   } catch (e) {}
 }
 
