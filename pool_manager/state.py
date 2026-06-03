@@ -97,24 +97,29 @@ class PoolState:
     def get_by_status(self, status: str) -> List[str]:
         return [n for n, p in self.profiles.items() if p["status"] == status]
 
-    def get_stats(self) -> dict:
+    def get_stats(self, max_bound: int = None) -> dict:
         """计算统计数据。"""
         total = len(self.profiles)
         bound = len(self.get_by_status(STATUS_BOUND_HEALTHY)) + \
                 len(self.get_by_status(STATUS_BOUND_UNHEALTHY)) + \
                 len(self.get_by_status(STATUS_BOUND_IDLE))
-        available = len(self.get_available())
+        available_raw = len(self.get_available())
         hot_pool = len(self.get_by_status(STATUS_IN_HOT_POOL))
         unhealthy = len(self.get_by_status(STATUS_BOUND_UNHEALTHY))
         expired = len(self.get_by_status(STATUS_EXPIRED))
-        return {
+
+        result = {
             "total_profiles": total,
             "bound": bound,
-            "available": available,
+            "available": available_raw,
             "hot_pool": hot_pool,
             "unhealthy": unhealthy,
             "expired": expired,
         }
+        if max_bound is not None:
+            result["max_bound"] = max_bound
+            result["available"] = max_bound - bound
+        return result
 
     def save(self, path: str = None):
         """持久化到 JSON 文件。"""
