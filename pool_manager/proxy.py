@@ -626,8 +626,10 @@ def _record_error_for_provider(provider: str):
 async def _proxy_stream(client: httpx.AsyncClient, url: str,
                         body: dict, headers: dict, start_time: float = 0, client_ip: str = "", model: str = "") -> StreamingResponse:
     """流式转发——SSE 逐 token 返回。"""
+    topic = analytics.infer_topic(body)
     async def generate():
         last_data_line = ""
+        usage_info = {}
         try:
             async with client.stream("POST", url, json=body, headers=headers) as resp:
                 async for chunk in resp.aiter_bytes():
@@ -635,6 +637,14 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
                     dec = chunk.decode(errors="replace")
                     if dec.startswith("data: ") and "[DONE]" not in dec:
                         last_data_line = dec[6:].strip()
+                        try:
+                            import json as _json
+                            ld = _json.loads(last_data_line)
+                            u = ld.get("usage", {})
+                            if isinstance(u, dict) and u.get("prompt_tokens") is not None:
+                                usage_info = u
+                        except Exception:
+                            pass
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n".encode()
         finally:
@@ -644,16 +654,17 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
                 msgs = body.get("messages")
                 if isinstance(msgs, list):
                     msg_count = len(msgs)
-                stream_tokens = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-                if last_data_line:
-                    try:
-                        import json as _json
-                        ld = _json.loads(last_data_line)
-                        u = ld.get("usage", {})
-                        if isinstance(u, dict):
-                            stream_tokens = u
-                    except Exception:
-                        pass
+                stream_tokens = {
+                    "prompt_tokens": usage_info.get("prompt_tokens", 0),
+                    "completion_tokens": usage_info.get("completion_tokens", 0),
+                    "total_tokens": usage_info.get("total_tokens", 0),
+                }
+
+                # 注入分类+用量元数据到流末尾
+                emoji = analytics.TOPIC_EMOJI.get(topic, "📌")
+                meta = f"\n━━━ {emoji} {topic} · 入 {stream_tokens['prompt_tokens']} · 出 {stream_tokens['completion_tokens']}"
+                yield f"data: {json.dumps({'choices':[{'delta':{'content': meta}}]})}\n\n".encode()
+
                 analytics.enqueue_record(_enrich_record({
                     "user_id": client_ip[:64], "model": model[:64],
                     "prompt_tokens": stream_tokens.get("prompt_tokens", 0),
@@ -690,6 +701,29 @@ async def _proxy_sync(client: httpx.AsyncClient, url: str,
             u = rd.get("usage", {})
             if isinstance(u, dict):
                 usage_info = u
+            # 注入分类+用量元数据到响应内容末尾
+            topic = analytics.infer_topic(body)
+            emoji = analytics.TOPIC_EMOJI.get(topic, "📌")
+            content = rd.get("choices", [{}])[0].get("message", {}).get("content", "")
+            if content:
+                meta = f"\n━━━ {emoji} {topic} · 入 {usage_info.get('prompt_tokens', 0)} · 出 {usage_info.get('completion_tokens', 0)}"
+                rd["choices"][0]["message"]["content"] = content + meta
+                modified = json.dumps(rd).encode()
+                analytics.enqueue_record(_enrich_record({
+                    "user_id": client_ip[:64], "model": model[:64],
+                    "prompt_tokens": usage_info.get("prompt_tokens", 0),
+                    "completion_tokens": usage_info.get("completion_tokens", 0),
+                    "total_tokens": usage_info.get("total_tokens", 0),
+                    "latency_ms": latency_ms, "msg_count": msg_count,
+                    "status": "error" if resp.status_code >= 400 else "success",
+                    "error_type": f"http_{resp.status_code}" if resp.status_code >= 400 else "",
+                    "streaming": False,
+                }, body, client_ip))
+                return Response(
+                    content=modified,
+                    status_code=resp.status_code,
+                    media_type=resp.headers.get("content-type", "application/json"),
+                )
         except Exception:
             pass
         analytics.enqueue_record(_enrich_record({
