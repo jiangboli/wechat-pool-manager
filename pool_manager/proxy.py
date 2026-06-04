@@ -629,21 +629,23 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
     topic = analytics.infer_topic(body)
     async def generate():
         usage_info = {}
+        buf = b""
         try:
             async with client.stream("POST", url, json=body, headers=headers) as resp:
                 async for chunk in resp.aiter_bytes():
-                    raw = chunk.decode(errors="replace")
-                    # 把可能粘在一起的多个 SSE 事件拆开处理
-                    for event in raw.split("\n\n"):
-                        ev = event.strip()
+                    buf += chunk
+                    # 尝试从缓冲区提取完整的 SSE 事件来处理
+                    while b"\n\n" in buf:
+                        event_bytes, _, buf = buf.partition(b"\n\n")
+                        ev = event_bytes.decode(errors="replace").strip()
                         if not ev:
                             continue
-                        # 拦截上游的 [DONE]，自己发
+                        # 拦截上游 [DONE]
                         if ev == "data: [DONE]":
                             continue
-                        # 非 [DONE] 的数据行，记录 usage 并透传
+                        yield event_bytes + b"\n\n"
+                        # 解析 usage
                         if ev.startswith("data: "):
-                            yield (ev + "\n\n").encode()
                             try:
                                 import json as _json
                                 ld = _json.loads(ev[6:].strip())
@@ -652,6 +654,9 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
                                     usage_info = u
                             except Exception:
                                 pass
+                # 缓冲区剩余字节（理论不应有，兜底）
+                if buf:
+                    yield buf
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n".encode()
         finally:
