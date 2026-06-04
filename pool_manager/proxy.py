@@ -109,8 +109,9 @@ def _get_pg_params() -> dict:
     return {"host": host, "port": port, "user": user, "password": password, "dbname": dbname}
 
 
-# 分类指令 + 提取正则
-_CLASS_RE = re.compile(r'\[CLASS:([^\]]+)\]')
+# 分类指令 + 提取正则（宽松匹配，确保标记不泄漏给用户）
+_CLASS_EXTRACT = re.compile(r'\[CLASS:([^\]]+)\]')
+_CLASS_STRIP = re.compile(r'\[CLASS[^\]]*\]')
 
 
 def _inject_topic_classify(body: dict):
@@ -714,12 +715,12 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
                                 # 检查并提取 [CLASS:xxx] 标记
                                 delta = ld.get("choices", [{}])[0].get("delta", {})
                                 content = delta.get("content", "")
-                                if content and "[CLASS:" in content:
-                                    m = _CLASS_RE.search(content)
+                                if content and "[CLASS" in content:
+                                    m = _CLASS_EXTRACT.search(content)
                                     if m:
                                         topic = m.group(1)
-                                    # 剥离标记，不显示给用户
-                                    cleaned = _CLASS_RE.sub("", content)
+                                    # 剥离所有 [CLASS...] 标记，不显示给用户
+                                    cleaned = _CLASS_STRIP.sub("", content)
                                     if cleaned:
                                         ld["choices"][0]["delta"]["content"] = cleaned
                                         yield f"data: {_json.dumps(ld)}\n\n".encode()
@@ -803,11 +804,11 @@ async def _proxy_sync(client: httpx.AsyncClient, url: str,
             # 提取 [CLASS:xxx] 标记分类
             topic = ""
             content = rd.get("choices", [{}])[0].get("message", {}).get("content", "")
-            if content and "[CLASS:" in content:
-                m = _CLASS_RE.search(content)
+            if content and "[CLASS" in content:
+                m = _CLASS_EXTRACT.search(content)
                 if m:
                     topic = m.group(1)
-                content = _CLASS_RE.sub("", content)
+                content = _CLASS_STRIP.sub("", content)
                 rd["choices"][0]["message"]["content"] = content
 
             emoji = analytics.TOPIC_EMOJI.get(topic, "📌")
