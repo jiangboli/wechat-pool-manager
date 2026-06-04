@@ -626,18 +626,16 @@ send_message(target="origin", message="⏳ 已用时 2 分钟...")
 
                     # 检查异常网络连接（TCP 连接数超过阈值则重建）
                     try:
-                        import subprocess
-                        proc = subprocess.run(
-                            ["docker", "exec", c.name, "cat", "/proc/net/tcp"],
-                            capture_output=True, text=True, timeout=5
-                        )
-                        if proc.returncode == 0:
-                            lines = proc.stdout.strip().split("\n")
-                            established = 0
-                            for line in lines[1:]:
-                                parts = line.strip().split()
-                                if len(parts) >= 4 and parts[3] == "01":
-                                    established += 1
+                        exec_id = self.client.api.exec_create(
+                            c.name, ["cat", "/proc/net/tcp"]
+                        )["Id"]
+                        output = self.client.api.exec_start(exec_id)
+                        lines = output.decode(errors="replace").strip().split("\n")
+                        established = 0
+                        for line in lines[1:]:
+                            parts = line.strip().split()
+                            if len(parts) >= 4 and parts[3] == "01":
+                                established += 1
                             if established > 200:
                                 logger.warning(
                                     "[%s] 网络连接异常: %d 个 TCP 连接 (正常 < 20)，重建容器...",
