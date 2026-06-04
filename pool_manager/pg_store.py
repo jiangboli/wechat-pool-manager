@@ -169,6 +169,13 @@ class PgStore:
         """扫码确认后获取暂存的用户信息。"""
         return self._pending_bindings.get(token)
 
+    def update_pending_binding_slot(self, token: str, slot_id: str, qr_url: str):
+        """排队用户被分配 slot 后，更新 pending 记录的 slot 和 QR。"""
+        if token in self._pending_bindings:
+            self._pending_bindings[token]["slot_id"] = slot_id
+            self._pending_bindings[token]["qr_url"] = qr_url
+            logger.info("排队分配: token=%s slot=%s", token[:8], slot_id)
+
     async def create_binding(self, profile: str, user_id: str, account_id: str,
                               bot_token: str, bot_base_url: str,
                               nickname: str = "", avatar_url: str = "",

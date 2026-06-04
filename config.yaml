@@ -1,7 +1,7 @@
 # WeChat Gateway Pool Manager v4 — 3 容器模式
 pool:
   total_profiles: 500
-  hot_pool_size: 5
+  hot_pool_size: 20
   max_bound_gateways: 500
   profile_prefix: "weixin-"
   max_qr_refresh: 3
