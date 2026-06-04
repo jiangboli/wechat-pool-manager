@@ -23,11 +23,11 @@ _analytics_queue: Optional[asyncio.Queue] = None
 _analytics_task: Optional[asyncio.Task] = None
 
 # 环境变量默认值
-DEFAULT_PG_HOST = os.environ.get("ANALYTICS_PG_HOST", "125.67.215.86")
+DEFAULT_PG_HOST = os.environ.get("ANALYTICS_PG_HOST", "")
 DEFAULT_PG_PORT = int(os.environ.get("ANALYTICS_PG_PORT", "5432"))
-DEFAULT_PG_USER = os.environ.get("ANALYTICS_PG_USER", "claw_do_user")
-DEFAULT_PG_PASSWORD = os.environ.get("ANALYTICS_PG_PASSWORD", "dosh_13579")
-DEFAULT_PG_DB = os.environ.get("ANALYTICS_PG_DB", "claw_do")
+DEFAULT_PG_USER = os.environ.get("ANALYTICS_PG_USER", "")
+DEFAULT_PG_PASSWORD = os.environ.get("ANALYTICS_PG_PASSWORD", "")
+DEFAULT_PG_DB = os.environ.get("ANALYTICS_PG_DB", "")
 
 # 批量写入配置
 BATCH_SIZE = 20          # 每 20 条或 5 秒写入一次

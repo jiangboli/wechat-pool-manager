@@ -46,7 +46,7 @@ def _get_docker_client() -> Optional[docker.DockerClient]:
         try:
             _docker_client = docker.from_env()
         except Exception as e:
-            logger.warning("Docker å®¢æ·ç«¯åå§åå¤±è´¥: %s", e)
+            logger.warning("Docker 客户端初始化失败: %s", e)
     return _docker_client
 
 def _refresh_ip_cache():
@@ -69,9 +69,9 @@ def _refresh_ip_cache():
         if cache:
             _ip_cache = cache
             _ip_cache_ts = now
-            logger.info("IP ç¼å­å·²å·æ°: %d ä¸ªå®¹å¨", len(cache))
+            logger.info("IP 缓存已刷新: %d 个容器", len(cache))
     except Exception as e:
-        logger.warning("å·æ° IP ç¼å­å¤±è´¥: %s", e)
+        logger.warning("刷新 IP 缓存失败: %s", e)
 
 def _lookup_container_ip(ip: str) -> str:
     _refresh_ip_cache()
@@ -88,11 +88,11 @@ def _enrich_record(record: dict, body: dict, client_ip: str) -> dict:
         if profile:
             import psycopg2
             conn = psycopg2.connect(
-                host=os.environ.get("ANALYTICS_PG_HOST", "125.67.215.86"),
+                host=os.environ.get("ANALYTICS_PG_HOST", ""),
                 port=int(os.environ.get("ANALYTICS_PG_PORT", "5432")),
-                user=os.environ.get("ANALYTICS_PG_USER", "claw_do_user"),
-                password=os.environ.get("ANALYTICS_PG_PASSWORD", "dosh_13579"),
-                dbname=os.environ.get("ANALYTICS_PG_DB", "claw_do"),
+                user=os.environ.get("ANALYTICS_PG_USER", ""),
+                password=os.environ.get("ANALYTICS_PG_PASSWORD", ""),
+                dbname=os.environ.get("ANALYTICS_PG_DB", ""),
             )
             cur = conn.cursor()
             cur.execute("SELECT user_name, phone, lobster_name FROM public.bindings WHERE profile_name = %s", (profile,))
@@ -104,7 +104,7 @@ def _enrich_record(record: dict, body: dict, client_ip: str) -> dict:
             cur.close()
             conn.close()
     except Exception as e:
-        logger.debug("è¡¥åç¨æ·ä¿¡æ¯å¤±è´¥: %s", e)
+        logger.debug("补充用户信息失败: %s", e)
     return record
 
 # 并发控制——最多同时处理 N 个 LLM 请求
@@ -630,6 +630,7 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
     async def generate():
         usage_info = {}
         buf = b""
+        _meta_injected = False
         try:
             async with client.stream("POST", url, json=body, headers=headers) as resp:
                 async for chunk in resp.aiter_bytes():
@@ -673,11 +674,13 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
                 }
 
                 # 注入分类+用量元数据到流末尾（在 OUR [DONE] 之前）
-                emoji = analytics.TOPIC_EMOJI.get(topic, "📌")
-                meta = f"\n━━━ {emoji} {topic} · 入 {stream_tokens['prompt_tokens']} · 出 {stream_tokens['completion_tokens']}"
-                yield f"data: {json.dumps({'choices':[{'delta':{'content': meta}}]})}\n\n".encode()
+                if not _meta_injected:
+                    _meta_injected = True
+                    emoji = analytics.TOPIC_EMOJI.get(topic, "📌")
+                    meta = f"\n━━━ {emoji} {topic} · 入 {stream_tokens['prompt_tokens']} · 出 {stream_tokens['completion_tokens']}"
+                    yield f"data: {json.dumps({'choices':[{'delta':{'content': meta}}]})}\n\n".encode()
 
-                analytics.enqueue_record(_enrich_record({
+                    analytics.enqueue_record(_enrich_record({
                     "user_id": client_ip[:64], "model": model[:64],
                     "prompt_tokens": stream_tokens.get("prompt_tokens", 0),
                     "completion_tokens": stream_tokens.get("completion_tokens", 0),

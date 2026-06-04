@@ -10,7 +10,7 @@ def init_pool():
     dsn = os.environ.get("CLAW_DO_DSN", "")
     dsn = dsn.replace("postgresql+asyncpg://", "postgresql://")
     if not dsn:
-        dsn = "host=125.67.215.86 dbname=claw_do user=claw_do_user password=dosh_13579"
+        raise RuntimeError("CLAW_DO_DSN 环境变量未设置，无法连接 PG")
     _pool = psycopg2.pool.ThreadedConnectionPool(1, 10, dsn)
     return _pool
 
