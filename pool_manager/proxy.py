@@ -628,23 +628,30 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
     """流式转发——SSE 逐 token 返回。"""
     topic = analytics.infer_topic(body)
     async def generate():
-        last_data_line = ""
         usage_info = {}
         try:
             async with client.stream("POST", url, json=body, headers=headers) as resp:
                 async for chunk in resp.aiter_bytes():
-                    yield chunk
-                    dec = chunk.decode(errors="replace")
-                    if dec.startswith("data: ") and "[DONE]" not in dec:
-                        last_data_line = dec[6:].strip()
-                        try:
-                            import json as _json
-                            ld = _json.loads(last_data_line)
-                            u = ld.get("usage", {})
-                            if isinstance(u, dict) and u.get("prompt_tokens") is not None:
-                                usage_info = u
-                        except Exception:
-                            pass
+                    raw = chunk.decode(errors="replace")
+                    # 把可能粘在一起的多个 SSE 事件拆开处理
+                    for event in raw.split("\n\n"):
+                        ev = event.strip()
+                        if not ev:
+                            continue
+                        # 拦截上游的 [DONE]，自己发
+                        if ev == "data: [DONE]":
+                            continue
+                        # 非 [DONE] 的数据行，记录 usage 并透传
+                        if ev.startswith("data: "):
+                            yield (ev + "\n\n").encode()
+                            try:
+                                import json as _json
+                                ld = _json.loads(ev[6:].strip())
+                                u = ld.get("usage", {})
+                                if isinstance(u, dict) and u.get("prompt_tokens") is not None:
+                                    usage_info = u
+                            except Exception:
+                                pass
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n".encode()
         finally:
@@ -660,7 +667,7 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
                     "total_tokens": usage_info.get("total_tokens", 0),
                 }
 
-                # 注入分类+用量元数据到流末尾
+                # 注入分类+用量元数据到流末尾（在 OUR [DONE] 之前）
                 emoji = analytics.TOPIC_EMOJI.get(topic, "📌")
                 meta = f"\n━━━ {emoji} {topic} · 入 {stream_tokens['prompt_tokens']} · 出 {stream_tokens['completion_tokens']}"
                 yield f"data: {json.dumps({'choices':[{'delta':{'content': meta}}]})}\n\n".encode()
