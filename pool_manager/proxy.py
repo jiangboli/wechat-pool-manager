@@ -79,6 +79,36 @@ def _lookup_container_ip(ip: str) -> str:
     name = _ip_cache.get(ip, "")
     return name.replace("hermes-", "") if name else ""
 
+# 从环境变量获取 PG 连接参数（优先 ANALYTICS_PG_*，后备 CLAW_DO_DSN）
+def _get_pg_params() -> dict:
+    """返回 pg_host, pg_port, pg_user, pg_password, pg_dbname。"""
+    host = os.environ.get("ANALYTICS_PG_HOST", "")
+    port = int(os.environ.get("ANALYTICS_PG_PORT", "5432"))
+    user = os.environ.get("ANALYTICS_PG_USER", "")
+    password = os.environ.get("ANALYTICS_PG_PASSWORD", "")
+    dbname = os.environ.get("ANALYTICS_PG_DB", "")
+    if not host:
+        dsn = os.environ.get("CLAW_DO_DSN", "")
+        if dsn:
+            try:
+                parts = dsn.split("://", 1)[-1]
+                up, rest = parts.split("@", 1)
+                u, pw = up.split(":", 1)
+                hp, db = rest.split("/", 1)
+                if ":" in hp:
+                    h, p = hp.split(":", 1)
+                    host = h
+                    port = int(p)
+                else:
+                    host = hp
+                if not user: user = u
+                if not password: password = pw
+                if not dbname: dbname = db
+            except Exception:
+                pass
+    return {"host": host, "port": port, "user": user, "password": password, "dbname": dbname}
+
+
 def _enrich_record(record: dict, body: dict, client_ip: str) -> dict:
     try:
         if not record.get("topic"):
@@ -89,12 +119,11 @@ def _enrich_record(record: dict, body: dict, client_ip: str) -> dict:
         profile = _lookup_container_ip(client_ip)
         if profile:
             import psycopg2
+            pg = _get_pg_params()
             conn = psycopg2.connect(
-                host=os.environ.get("ANALYTICS_PG_HOST", ""),
-                port=int(os.environ.get("ANALYTICS_PG_PORT", "5432")),
-                user=os.environ.get("ANALYTICS_PG_USER", ""),
-                password=os.environ.get("ANALYTICS_PG_PASSWORD", ""),
-                dbname=os.environ.get("ANALYTICS_PG_DB", ""),
+                host=pg["host"], port=pg["port"],
+                user=pg["user"], password=pg["password"],
+                dbname=pg["dbname"],
             )
             cur = conn.cursor()
             cur.execute("SELECT user_name, phone, lobster_name FROM public.bindings WHERE profile_name = %s", (profile,))
