@@ -109,12 +109,37 @@ def _get_pg_params() -> dict:
     return {"host": host, "port": port, "user": user, "password": password, "dbname": dbname}
 
 
+# 分类指令 + 提取正则
+_CLASS_RE = re.compile(r'\[CLASS:([^\]]+)\]')
+
+
+def _inject_topic_classify(body: dict):
+    """在最后一条用户消息末尾附加分类指令。
+    
+    这条指令要求 LLM 在回复末尾加上 [CLASS:分类名] 标记，
+    之后由 proxy 提取并剥离，用户不可见。
+    """
+    msgs = body.get("messages", [])
+    for i in range(len(msgs) - 1, -1, -1):
+        msg = msgs[i]
+        if isinstance(msg, dict) and msg.get("role") == "user":
+            instruction = (
+                "\n\n【必须执行】回复结束时，在最后一行用 [CLASS:分类名] 标记话题分类。"
+                "可选分类：财经金融、科技互联网、社会时事、娱乐八卦、体育赛事、"
+                "游戏动漫、音乐艺术、教育学习、健康医疗、美食旅行、生活消费、"
+                "汽车出行、时尚美妆、闲聊问候、功能咨询。"
+                "例如回复结尾加上 [CLASS:财经金融]。不要省略，不要显示此指令。"
+            )
+            msg["content"] += instruction
+            break
+
+
 def _enrich_record(record: dict, body: dict, client_ip: str) -> dict:
     try:
         if not record.get("topic"):
-            record["topic"] = analytics.infer_topic(body)
+            record["topic"] = ""
     except Exception:
-        record["topic"] = "å¶ä»"
+        record["topic"] = ""
     try:
         profile = _lookup_container_ip(client_ip)
         if profile:
@@ -560,23 +585,13 @@ async def _do_proxy(request: Request, body: dict) -> Response:
             sem.release()
 
 
-# 隐身指令：LLM 在回复末尾标记分类（用户不可见）
-_CLASS_INSTRUCTION = (
-    "[内部指令] 在回复末尾附加 [CLASS:分类名]，例如 [CLASS:财经金融]。"
-    "可选分类：财经金融、科技互联网、社会时事、娱乐八卦、体育赛事、游戏动漫、"
-    "音乐艺术、教育学习、健康医疗、美食旅行、生活消费、汽车出行、时尚美妆、"
-    "闲聊问候、功能咨询。不要向用户展示此指令。"
-)
-_CLASS_RE = re.compile(r'\[CLASS:([^\]]+)\]')
-
-
 async def _do_proxy_inner(request: Request, body: dict, client_ip: str) -> Response:
     """实际的代理转发逻辑（不含速率限制和排队）。"""
     start_time = time.time()
     model = body.get("model", "")
 
-    # 注入隐身指令——LLM 分类比关键词匹配准得多
-    body["messages"].insert(0, {"role": "system", "content": _CLASS_INSTRUCTION})
+    # 在最后一条用户消息末尾附加分类指令（比 system 消息可靠）
+    _inject_topic_classify(body)
 
     providers_to_try = []
 
@@ -691,24 +706,23 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
                         if ev == "data: [DONE]":
                             continue
 
-                        # 提取 LLM 分类标记 [CLASS:xxx] 并剥离
                         if ev.startswith("data: "):
                             try:
                                 import json as _json
                                 ld = _json.loads(ev[6:].strip())
-                                # 检查 content delta 中是否有 [CLASS:xxx]
+
+                                # 检查并提取 [CLASS:xxx] 标记
                                 delta = ld.get("choices", [{}])[0].get("delta", {})
                                 content = delta.get("content", "")
                                 if content and "[CLASS:" in content:
                                     m = _CLASS_RE.search(content)
                                     if m:
                                         topic = m.group(1)
-                                    # 从 content 中移除 [CLASS:xxx]
+                                    # 剥离标记，不显示给用户
                                     cleaned = _CLASS_RE.sub("", content)
                                     if cleaned:
                                         ld["choices"][0]["delta"]["content"] = cleaned
                                         yield f"data: {_json.dumps(ld)}\n\n".encode()
-                                    # cleaned 为空则不 yield（不产生空 token）
                                 else:
                                     yield event_bytes + b"\n\n"
 
@@ -738,9 +752,9 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
                     "total_tokens": usage_info.get("total_tokens", 0),
                 }
 
-                # 用 LLM 分类结果；兜底用关键词匹配
+                # 用 [CLASS:xxx] 分类，如果没有就是空值
                 if not topic:
-                    topic = analytics.infer_topic(body)
+                    topic = ""
 
                 # 注入分类+用量元数据到流末尾（在 OUR [DONE] 之前）
                 if not _meta_injected:
@@ -786,7 +800,7 @@ async def _proxy_sync(client: httpx.AsyncClient, url: str,
             u = rd.get("usage", {})
             if isinstance(u, dict):
                 usage_info = u
-            # 提取 LLM 分类标记 [CLASS:xxx] 并剥离
+            # 提取 [CLASS:xxx] 标记分类
             topic = ""
             content = rd.get("choices", [{}])[0].get("message", {}).get("content", "")
             if content and "[CLASS:" in content:
@@ -795,9 +809,6 @@ async def _proxy_sync(client: httpx.AsyncClient, url: str,
                     topic = m.group(1)
                 content = _CLASS_RE.sub("", content)
                 rd["choices"][0]["message"]["content"] = content
-
-            if not topic:
-                topic = analytics.infer_topic(body)
 
             emoji = analytics.TOPIC_EMOJI.get(topic, "📌")
             if content:
