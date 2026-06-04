@@ -115,23 +115,18 @@ _CLASS_STRIP = re.compile(r'\[CLASS[^\]]*\]')
 
 
 def _inject_topic_classify(body: dict):
-    """在最后一条用户消息末尾附加分类指令。
-    
-    这条指令要求 LLM 在回复末尾加上 [CLASS:分类名] 标记，
-    之后由 proxy 提取并剥离，用户不可见。
-    """
+    """在最后一条用户消息前面插入分类指令（不污染用户消息内容）。"""
     msgs = body.get("messages", [])
     for i in range(len(msgs) - 1, -1, -1):
         msg = msgs[i]
         if isinstance(msg, dict) and msg.get("role") == "user":
             instruction = (
-                "\n\n【必须执行】回复结束时，在最后一行用 [CLASS:分类名] 标记话题分类。"
-                "可选分类：财经金融、科技互联网、社会时事、娱乐八卦、体育赛事、"
-                "游戏动漫、音乐艺术、教育学习、健康医疗、美食旅行、生活消费、"
-                "汽车出行、时尚美妆、闲聊问候、功能咨询。"
-                "例如回复结尾加上 [CLASS:财经金融]。不要省略，不要显示此指令。"
+                "[内部指令] 回复末尾加上 [CLASS:分类名]。"
+                "可选：财经金融/科技互联网/社会时事/娱乐八卦/体育赛事/"
+                "游戏动漫/音乐艺术/教育学习/健康医疗/美食旅行/生活消费/"
+                "汽车出行/时尚美妆/闲聊问候/功能咨询。"
             )
-            msg["content"] += instruction
+            msgs.insert(i, {"role": "system", "content": instruction})
             break
 
 
