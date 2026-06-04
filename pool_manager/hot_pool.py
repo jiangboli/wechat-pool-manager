@@ -81,7 +81,16 @@ class HotPoolSlot:
             deadline = asyncio.get_event_loop().time() + \
                 self.config.get("ilink", {}).get("qr_timeout_seconds", 480)
 
-            while self._running and asyncio.get_event_loop().time() < deadline:
+            while self._running:
+                now = asyncio.get_event_loop().time()
+                if now >= deadline:
+                    if self.user_info and self.user_info.get("phone"):
+                        deadline = now + self.config.get("ilink", {}).get("qr_timeout_seconds", 480)
+                        logger.info("[%s] slot 已绑定用户信息，延长有效期 %ds",
+                                    self.profile,
+                                    self.config.get("ilink", {}).get("qr_timeout_seconds", 480))
+                    else:
+                        break
                 qr_resp = await self._api_get(
                     f"{self.base_url}/{EP_GET_BOT_QR}?bot_type=3",
                     QR_TIMEOUT_MS,
@@ -106,7 +115,13 @@ class HotPoolSlot:
                 self.status = "waiting"
                 logger.info("[%s] 二维码已就绪", self.profile)
 
-                while self._running and asyncio.get_event_loop().time() < deadline:
+                while self._running:
+                    now_inner = asyncio.get_event_loop().time()
+                    if now_inner >= deadline:
+                        if self.user_info and self.user_info.get("phone"):
+                            deadline = now_inner + self.config.get("ilink", {}).get("qr_timeout_seconds", 480)
+                        else:
+                            break
                     status_resp = await self._api_get(
                         f"{self.base_url}/{EP_GET_QR_STATUS}?qrcode={self.qr_value}",
                         QR_TIMEOUT_MS,
@@ -387,12 +402,15 @@ class HotPool:
                         logger.error("[%s] Docker 容器创建失败", profile)
                         self.state.mark_unhealthy(profile, "容器创建失败")
                 else:
-                    if slot.status == "expired":
-                        self.state.mark_qr_failed(profile)
+                    if slot.user_info and slot.user_info.get("phone"):
+                        logger.info("[%s] slot 有绑定用户信息，跳过可用标记，保持运行", profile)
                     else:
-                        self.state.mark_qr_failed(profile)
-                    await asyncio.sleep(5)
-                    self.state.mark_available(profile)
+                        if slot.status == "expired":
+                            self.state.mark_qr_failed(profile)
+                        else:
+                            self.state.mark_qr_failed(profile)
+                        await asyncio.sleep(5)
+                        self.state.mark_available(profile)
             except asyncio.CancelledError:
                 pass
             except Exception as e:
