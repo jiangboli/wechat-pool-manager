@@ -688,8 +688,9 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
                         body: dict, headers: dict, start_time: float = 0, client_ip: str = "", model: str = "") -> StreamingResponse:
     """流式转发——SSE 逐 token 返回。"""
     topic = ""
+    _reasoning_buf = ""
     async def generate():
-        nonlocal topic
+        nonlocal topic, _reasoning_buf
         usage_info = {}
         buf = b""
         _meta_injected = False
@@ -715,6 +716,7 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
                                 # 检查并提取 [CLASS:xxx] 标记
                                 delta = ld.get("choices", [{}])[0].get("delta", {})
                                 content = delta.get("content", "")
+                                rc = delta.get("reasoning_content", "")
                                 if content and "[CLASS" in content:
                                     m = _CLASS_EXTRACT.search(content)
                                     if m:
@@ -727,6 +729,10 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
                                 else:
                                     yield event_bytes + b"\n\n"
 
+                                if rc:
+                                    _reasoning_buf += rc
+                                elif content:
+                                    _reasoning_buf += content
                                 # 解析 usage
                                 u = ld.get("usage", {})
                                 if isinstance(u, dict) and u.get("prompt_tokens") is not None:
@@ -754,6 +760,9 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
                 }
 
                 # 用 [CLASS:xxx] 分类，如果没有就是空值
+                if not topic and _reasoning_buf:
+                    import logging
+                    topic = analytics.infer_topic_from_text(_reasoning_buf)
                 if not topic:
                     topic = ""
 
