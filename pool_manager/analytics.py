@@ -43,11 +43,40 @@ def init_analytics(pg_config: dict = None):
     """
     global _pg_pool, _analytics_queue, _analytics_task
 
-    host = pg_config.get("host", DEFAULT_PG_HOST) if pg_config else DEFAULT_PG_HOST
-    port = pg_config.get("port", DEFAULT_PG_PORT) if pg_config else DEFAULT_PG_PORT
-    user = pg_config.get("user", DEFAULT_PG_USER) if pg_config else DEFAULT_PG_USER
-    password = pg_config.get("password", DEFAULT_PG_PASSWORD) if pg_config else DEFAULT_PG_PASSWORD
-    dbname = pg_config.get("dbname", DEFAULT_PG_DB) if pg_config else DEFAULT_PG_DB
+    # 优先 ANALYTICS_PG_* 环境变量，后备解析 CLAW_DO_DSN
+    host = DEFAULT_PG_HOST
+    port = DEFAULT_PG_PORT
+    user = DEFAULT_PG_USER
+    password = DEFAULT_PG_PASSWORD
+    dbname = DEFAULT_PG_DB
+    if pg_config:
+        host = pg_config.get("host", host)
+        port = pg_config.get("port", port)
+        user = pg_config.get("user", user)
+        password = pg_config.get("password", password)
+        dbname = pg_config.get("dbname", dbname)
+    # 后备：从 CLAW_DO_DSN 解析
+    if not host:
+        dsn = os.environ.get("CLAW_DO_DSN", "")
+        if dsn:
+            try:
+                # postgresql+asyncpg://user:password@host:port/dbname
+                parts = dsn.split("://", 1)[-1]
+                user_pass, rest = parts.split("@", 1)
+                user, passwd = user_pass.split(":", 1)
+                host_port, db = rest.split("/", 1)
+                if ":" in host_port:
+                    h, p = host_port.split(":", 1)
+                    host = h
+                    port = int(p)
+                else:
+                    host = host_port
+                if not user: user = user
+                if not password: password = passwd
+                if not dbname: dbname = db
+                logger.info("Analytics: 从 CLAW_DO_DSN 解析到 PG 连接 %s:%s/%s", host, port, dbname)
+            except Exception as e:
+                logger.debug("解析 CLAW_DO_DSN 失败: %s", e)
 
     try:
         _pg_pool = psycopg2.pool.ThreadedConnectionPool(
