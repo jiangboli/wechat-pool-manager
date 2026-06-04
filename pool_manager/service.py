@@ -49,6 +49,10 @@ pool_task: Optional[asyncio.Task] = None
 scheduler: Optional[ds.DockerScheduler] = None
 health_task: Optional[asyncio.Task] = None
 
+# ── 排队队列 ──────────────────────────────────────────────────────────────
+_binding_queue: list = []          # 排队中的注册请求 [{token, phone, lobster_name, user_name}]
+_queue_check_task: Optional[asyncio.Task] = None  # 后台队列分配任务
+
 # ── 三个独立 FastAPI 应用 ────────────────────────────────────────────
 
 # 应用 A：绑定页（对外公开）
@@ -168,7 +172,22 @@ async def register_binding(req: Request):
             target = s
             break
     if not target:
-        raise HTTPException(503, "当前无可用二维码，请稍后再试")
+        # 无可用槽位 → 加入排队队列
+        pending_token = secrets.token_hex(16)
+        pg_store.save_pending_binding(pending_token, phone, lobster_name, user_name, slot_id="__queued__")
+        position = len(_binding_queue) + 1
+        _binding_queue.append({
+            "token": pending_token,
+            "phone": phone,
+            "lobster_name": lobster_name,
+            "user_name": user_name,
+        })
+        logger.info("排队中: phone=%s user=%s position=%d", phone, user_name, position)
+        return {
+            "queued": True,
+            "pending_token": pending_token,
+            "position": position,
+        }
     slot_id = target["profile"]
     # 将用户信息绑定到槽位
     hot_pool.set_slot_user_info(slot_id, {
@@ -189,11 +208,24 @@ async def register_binding(req: Request):
 
 @bind_app.get("/api/v1/bind/rebind-status/{pending_token}")
 async def get_rebind_status(pending_token: str):
-    """轮询 rebind QR 扫码状态。"""
+    """轮询 QR 扫码状态（支持 rebind + 排队用户）。"""
     pending = pg_store.get_pending_binding(pending_token)
     if not pending:
         raise HTTPException(404, "无效的 pending_token")
     profile = pending["slot_id"]
+    
+    # ── 排队中的用户 ──
+    if profile == "__queued__":
+        position = next((i + 1 for i, q in enumerate(_binding_queue) if q["token"] == pending_token), None)
+        if position is not None:
+            return {"status": "queued", "position": position}
+        # 不在队列中 → 可能已被分配 slot，重新读取 pending（slot_id 可能已更新）
+        pending = pg_store.get_pending_binding(pending_token)
+        if pending and pending["slot_id"] != "__queued__":
+            profile = pending["slot_id"]
+            return {"status": "ready", "slot_id": profile, "qr_url": pending.get("qr_url", "")}
+        return {"status": "queued", "position": 999}
+    
     session = hot_pool.get_rebind_session(profile) if hot_pool else None
     if not session:
         # 会话已清理或不存在
@@ -616,7 +648,7 @@ async def _start_bind():
     if pg_store.enabled:
         try:
             containers = scheduler.list_containers()
-            await pg_store.register_machine(total_slots=total, hot_pool_size=5)
+            await pg_store.register_machine(total_slots=total, hot_pool_size=config.get("pool", {}).get("hot_pool_size", 20))
             await pg_store.restore_bindings_from_containers(containers)
         except Exception as e:
             logger.warning("PG 初始化异常: %s", e)
@@ -632,9 +664,59 @@ async def _start_bind():
         interval=health_interval, max_restarts=max_restarts,
     ))
 
+    # ── 启动排队队列检查任务 ──
+    global _queue_check_task
+    _queue_check_task = asyncio.create_task(_queue_check_loop())
+
     logger.info("Bind 服务启动完成")
 
 
+# ═════════════════════════════════════════════════════════════════════
+# 排队队列分配逻辑
+# ═════════════════════════════════════════════════════════════════════
+
+
+async def _assign_from_queue():
+    """从排队队列中取第一个人，分配给可用 slot。"""
+    if not _binding_queue or not hot_pool:
+        return
+    slots = hot_pool.get_all_slots()
+    target = None
+    for s in slots:
+        # 找 status==waiting 且没有 user_info（未被注册用户占用的）slot
+        if s["status"] == "waiting" and s["qr_url"]:
+            slot_obj = hot_pool.slots.get(s["profile"])
+            if slot_obj and not slot_obj.user_info:
+                target = s
+                break
+    if not target:
+        return
+    item = _binding_queue.pop(0)
+    slot_id = target["profile"]
+    token = item["token"]
+    # 将用户信息绑定到槽位
+    hot_pool.set_slot_user_info(slot_id, {
+        "phone": item["phone"],
+        "lobster_name": item["lobster_name"],
+        "user_name": item["user_name"],
+    })
+    # 更新 pending binding 的 slot_id
+    pg_store.update_pending_binding_slot(token, slot_id, target["qr_url"])
+    logger.info("排队分配: token=%s slot=%s (剩余 %d 人排队)", token[:8], slot_id, len(_binding_queue))
+
+
+async def _queue_check_loop():
+    """后台任务：每 5 秒检查一次排队队列，有可用 slot 就分配。"""
+    logger.info("排队队列检查任务已启动 (interval=5s)")
+    try:
+        while True:
+            await asyncio.sleep(5)
+            await _assign_from_queue()
+    except asyncio.CancelledError:
+        logger.info("排队队列检查任务已停止")
+
+
+# ═════════════════════════════════════════════════════════════════════
 async def _start_admin():
     """初始化管理服务（状态 + DockerScheduler + AdminToken + PG）。"""
     global scheduler
@@ -680,6 +762,8 @@ def _setup_lifespan(app_obj, mode):
                     pool_task.cancel()
             if health_task:
                 health_task.cancel()
+            if _queue_check_task:
+                _queue_check_task.cancel()
             if scheduler:
                 scheduler.close()
             state.save()

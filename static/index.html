@@ -743,6 +743,11 @@ async function submitForm() {
         startPollingRebindStatus(data.pending_token);
         startCountdown();
         fetchStats();
+    } else if (data.queued) {
+        // 排队中——显示排队提示
+        showQueued(data.position, data.pending_token);
+        startPollingRebindStatus(data.pending_token);
+        fetchStats();
     } else {
         showQR(data.qr_url, data.slot_id);
         countdownValue = 50;
@@ -788,6 +793,23 @@ function showLoading() {
   qrBox.classList.add('pulsing');
   document.getElementById('qrContent').innerHTML = '<div class="qr-skeleton"></div>';
   setStatus('获取中...', '');
+}
+
+function showQueued(position, pendingToken) {
+  currentSlot = null;
+  lastQrUrl = '';
+  const qrBox = document.getElementById('qrBox');
+  qrBox.className = 'qr-box';
+  qrBox.classList.remove('pulsing');
+  document.getElementById('qrContent').innerHTML =
+    '<div class="qr-placeholder" style="font-size:18px;text-align:center;padding:60px 20px;">' +
+    '<div style="font-size:48px;margin-bottom:15px;">⏳</div>' +
+    '<div style="font-weight:bold;margin-bottom:8px;">绑定人数过多，您已进入排队</div>' +
+    '<div id="queuePosition" style="font-size:24px;color:var(--accent);font-weight:bold;margin:10px 0;">第 ' + position + ' 位</div>' +
+    '<div style="font-size:14px;color:#999;">请稍候，系统将自动为您分配二维码...</div>' +
+    '</div>';
+  setStatus('排队中，第 ' + position + ' 位', 'waiting');
+  document.getElementById('refreshBtn').disabled = true;
 }
 
 function showRebindQR(url, profileName, pendingToken) {
@@ -878,7 +900,23 @@ async function pollRebindStatus(pendingToken) {
     const data = await resp.json();
     if (data.status === 'confirmed') { showSuccess(); return; }
     if (data.status === 'scaned') { showScanned(); return; }
-    if (data.status === 'expired' || data.status === 'error' || data.status === 'timeout') {
+    if (data.status === 'queued') {
+      // 排队中——更新位置
+      const posEl = document.getElementById('queuePosition');
+      if (posEl) posEl.textContent = '第 ' + data.position + ' 位';
+      setStatus('排队中，第 ' + data.position + ' 位', 'waiting');
+      return;
+    }
+    if (data.status === 'ready') {
+      // 排队结束，slot 已分配——展示 QR 并切换到 slot 轮询
+      if (statusTimer) clearInterval(statusTimer);
+      showQR(data.qr_url, data.slot_id);
+      startPollingStatus(data.slot_id);
+      startCountdown();
+      startImageRefresh();
+      return;
+    }
+    if (data.status === 'expired' || data.status === 'error' || data.status === 'timeout' || data.status === 'not_found') {
       setStatus('二维码已过期，请重新提交', 'error');
       document.getElementById('refreshBtn').disabled = false;
       if (statusTimer) clearInterval(statusTimer);
