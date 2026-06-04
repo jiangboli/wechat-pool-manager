@@ -752,11 +752,10 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
                 if not topic:
                     topic = ""
 
-                # 注入分类+用量元数据到流末尾（在 OUR [DONE] 之前）
+                # 注入分类+用量元数据到流末尾
                 if not _meta_injected:
                     _meta_injected = True
-                    emoji = analytics.TOPIC_EMOJI.get(topic, "📌")
-                    meta = f"\n━━━ {emoji} {topic} · 入 {stream_tokens['prompt_tokens']} · 出 {stream_tokens['completion_tokens']}"
+                    meta = f"\n{topic} · 入 {stream_tokens['prompt_tokens']} · 出 {stream_tokens['completion_tokens']}"
                     yield f"data: {json.dumps({'choices':[{'delta':{'content': meta}}]})}\n\n".encode()
 
                     analytics.enqueue_record(_enrich_record({
@@ -791,13 +790,13 @@ async def _proxy_sync(client: httpx.AsyncClient, url: str,
         if isinstance(msgs, list):
             msg_count = len(msgs)
         usage_info = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        topic = ""
         try:
             rd = json.loads(resp.content)
             u = rd.get("usage", {})
             if isinstance(u, dict):
                 usage_info = u
             # 提取 [CLASS:xxx] 标记分类
-            topic = ""
             content = rd.get("choices", [{}])[0].get("message", {}).get("content", "")
             if content and "[CLASS" in content:
                 m = _CLASS_EXTRACT.search(content)
@@ -806,9 +805,8 @@ async def _proxy_sync(client: httpx.AsyncClient, url: str,
                 content = _CLASS_STRIP.sub("", content)
                 rd["choices"][0]["message"]["content"] = content
 
-            emoji = analytics.TOPIC_EMOJI.get(topic, "📌")
             if content:
-                meta = f"\n━━━ {emoji} {topic} · 入 {usage_info.get('prompt_tokens', 0)} · 出 {usage_info.get('completion_tokens', 0)}"
+                meta = f"\n{topic} · 入 {usage_info.get('prompt_tokens', 0)} · 出 {usage_info.get('completion_tokens', 0)}"
                 rd["choices"][0]["message"]["content"] = content + meta
                 modified = json.dumps(rd).encode()
                 analytics.enqueue_record(_enrich_record({
@@ -838,6 +836,7 @@ async def _proxy_sync(client: httpx.AsyncClient, url: str,
             "status": "error" if resp.status_code >= 400 else "success",
             "error_type": f"http_{resp.status_code}" if resp.status_code >= 400 else "",
             "streaming": False,
+            "topic": topic,
         }, body, client_ip))
     return Response(
         content=resp.content,
