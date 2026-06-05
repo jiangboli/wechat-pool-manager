@@ -44,6 +44,7 @@ td{font-family:monospace}
 <script>
 function fmt(n){return typeof n==='number'?n.toLocaleString():n}
 function fmtWan(n){return typeof n!=='number'?n:(n/10000).toFixed(1)+'万'}
+    var chart1,chart2,chart3;
 async function load(){
   try{
     var r=await fetch('/api/v1/dashboard');
@@ -66,15 +67,15 @@ async function load(){
     var tt=document.getElementById('tokenTable');
     tt.innerHTML='<tr><th>#</th><th>用户</th><th>Token(万)</th></tr>';
     d.top_tok.forEach(function(r,i){tt.innerHTML+='<tr><td>'+(i+1)+'</td><td>'+r[0]+'</td><td>'+fmtWan(r[1])+'</td></tr>'});
-    if(window.c1)window.c1.destroy();if(window.c2)window.c2.destroy();if(window.c3)window.c3.destroy();
+    if(chart1)chart1.destroy();if(chart2)chart2.destroy();if(chart3)chart3.destroy();
     if(d.trend_labels&&d.trend_labels.length){
-      window.c1=new Chart(document.getElementById('c1'),{type:'line',data:{labels:d.trend_labels,datasets:[{label:'请求',data:d.trend_data,borderColor:'#3b82f6',tension:0.3,fill:true,backgroundColor:'rgba(59,130,246,0.1)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#94a3b8',maxTicksLimit:10}},y:{ticks:{color:'#94a3b8'}}}}});
+      chart1=new Chart(document.getElementById('c1'),{type:'line',data:{labels:d.trend_labels,datasets:[{label:'请求',data:d.trend_data,borderColor:'#3b82f6',tension:0.3,fill:true,backgroundColor:'rgba(59,130,246,0.1)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#94a3b8',maxTicksLimit:10}},y:{ticks:{color:'#94a3b8'}}}}});
     }
     if(d.model_labels&&d.model_labels.length){
-      window.c2=new Chart(document.getElementById('c2'),{type:'pie',data:{labels:d.model_labels,datasets:[{data:d.model_data,backgroundColor:['#3b82f6','#22c55e','#f59e0b','#ef4444','#a855f7','#14b8a6']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#94a3b8',padding:10}}}}});
+      chart2=new Chart(document.getElementById('c2'),{type:'pie',data:{labels:d.model_labels,datasets:[{data:d.model_data,backgroundColor:['#3b82f6','#22c55e','#f59e0b','#ef4444','#a855f7','#14b8a6']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#94a3b8',padding:10}}}}});
     }
     if(d.topic_labels&&d.topic_labels.length){
-      window.c3=new Chart(document.getElementById('c3'),{type:'pie',data:{labels:d.topic_labels,datasets:[{data:d.topic_data,backgroundColor:['#f59e0b','#3b82f6','#22c55e','#a855f7','#ef4444','#14b8a6','#f97316','#06b6d4','#ec4899','#84cc16','#6366f1','#d946ef','#0ea5e9','#10b981','#eab308']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#94a3b8',padding:8,boxWidth:12,font:{size:11}}}}}});
+      chart3=new Chart(document.getElementById('c3'),{type:'pie',data:{labels:d.topic_labels,datasets:[{data:d.topic_data,backgroundColor:['#f59e0b','#3b82f6','#22c55e','#a855f7','#ef4444','#14b8a6','#f97316','#06b6d4','#ec4899','#84cc16','#6366f1','#d946ef','#0ea5e9','#10b981','#eab308']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#94a3b8',padding:8,boxWidth:12,font:{size:11}}}}}});
     }
     document.getElementById('updateTime').textContent=new Date().toLocaleTimeString();
   }catch(e){}
