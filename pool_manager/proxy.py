@@ -634,33 +634,37 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
     _reasoning_buf = ""
     async def generate():
         nonlocal topic, _reasoning_buf
-        last_data_line = ""
         usage_info = {}
+        sse_buf = b""
         try:
             async with client.stream("POST", url, json=body, headers=headers) as resp:
                 async for chunk in resp.aiter_bytes():
                     yield chunk
-                    dec = chunk.decode(errors="replace")
-                    if dec.startswith("data: ") and "[DONE]" not in dec:
-                        last_data_line = dec[6:].strip()
-                        try:
-                            import json as _json
-                            ld = _json.loads(last_data_line)
-                            # Accumulate content + reasoning for topic extraction
-                            choices = ld.get("choices", [])
-                            if choices:
-                                delta = choices[0].get("delta", {})
-                                rc = delta.get("reasoning_content", "")
-                                content = delta.get("content", "")
-                                if rc:
-                                    _reasoning_buf += rc
-                                elif content:
-                                    _reasoning_buf += content
-                            u = ld.get("usage", {})
-                            if isinstance(u, dict) and u.get("prompt_tokens") is not None:
-                                usage_info = u
-                        except Exception:
-                            pass
+                    sse_buf += chunk
+                    while b"\n\n" in sse_buf:
+                        event_bytes, _, sse_buf = sse_buf.partition(b"\n\n")
+                        ev = event_bytes.decode(errors="replace").strip()
+                        if not ev or ev == "data: [DONE]":
+                            continue
+                        if ev.startswith("data: "):
+                            try:
+                                import json as _json
+                                ld = _json.loads(ev[6:])
+                                # Accumulate content + reasoning for topic extraction
+                                choices = ld.get("choices", [])
+                                if choices:
+                                    delta = choices[0].get("delta", {})
+                                    rc = delta.get("reasoning_content", "")
+                                    content = delta.get("content", "")
+                                    if rc:
+                                        _reasoning_buf += rc
+                                    elif content:
+                                        _reasoning_buf += content
+                                u = ld.get("usage", {})
+                                if isinstance(u, dict) and u.get("prompt_tokens") is not None:
+                                    usage_info = u
+                            except Exception:
+                                pass
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n".encode()
         finally:
