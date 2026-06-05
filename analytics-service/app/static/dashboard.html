@@ -1,6 +1,6 @@
 <!DOCTYPE html><html lang=zh><head><meta charset=utf-8>
 <title>Claw DO 看板</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="/static/chart.umd.min.js"></script>
 <style>
 *{margin:0;padding:0;font-family:sans-serif}
 body{background:#0f172a;color:#e2e8f0;padding:24px}
@@ -66,7 +66,7 @@ async function load(){
     var tt=document.getElementById('tokenTable');
     tt.innerHTML='<tr><th>#</th><th>用户</th><th>Token(万)</th></tr>';
     d.top_tok.forEach(function(r,i){tt.innerHTML+='<tr><td>'+(i+1)+'</td><td>'+r[0]+'</td><td>'+fmtWan(r[1])+'</td></tr>'});
-    if(window.c1)window.c1.destroy();if(window.c2)window.c2.destroy();
+    if(window.c1)window.c1.destroy();if(window.c2)window.c2.destroy();if(window.c3)window.c3.destroy();
     if(d.trend_labels&&d.trend_labels.length){
       window.c1=new Chart(document.getElementById('c1'),{type:'line',data:{labels:d.trend_labels,datasets:[{label:'请求',data:d.trend_data,borderColor:'#3b82f6',tension:0.3,fill:true,backgroundColor:'rgba(59,130,246,0.1)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#94a3b8',maxTicksLimit:10}},y:{ticks:{color:'#94a3b8'}}}}});
     }
