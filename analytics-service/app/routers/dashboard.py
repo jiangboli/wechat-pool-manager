@@ -43,6 +43,12 @@ async def get_dashboard():
         data["model_labels"] = [r[0] for r in rows]
         data["model_data"] = [r[1] for r in rows]
 
+        # 话题分布（7天）
+        c.execute("SELECT topic, count(*) FROM analytics.proxy_api_calls WHERE created_at >= CURRENT_DATE - 7 AND topic != '' GROUP BY topic ORDER BY count(*) DESC")
+        rows = c.fetchall()
+        data["topic_labels"] = [r[0] for r in rows]
+        data["topic_data"] = [r[1] for r in rows]
+
         return data
     finally:
         put_conn(conn)
