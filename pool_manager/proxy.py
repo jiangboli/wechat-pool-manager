@@ -15,7 +15,6 @@ import json
 import logging
 import os
 import random
-import re
 import time
 from collections import defaultdict
 from typing import Dict, List, Optional
@@ -108,26 +107,6 @@ def _get_pg_params() -> dict:
                 pass
     return {"host": host, "port": port, "user": user, "password": password, "dbname": dbname}
 
-
-# 分类指令 + 提取正则（宽松匹配，确保标记不泄漏给用户）
-_CLASS_EXTRACT = re.compile(r'\[CLASS:([^\]]+)\]')
-_CLASS_STRIP = re.compile(r'\[CLASS[^\]]*\]')
-
-
-def _inject_topic_classify(body: dict):
-    """在最后一条用户消息前面插入分类指令（不污染用户消息内容）。"""
-    msgs = body.get("messages", [])
-    for i in range(len(msgs) - 1, -1, -1):
-        msg = msgs[i]
-        if isinstance(msg, dict) and msg.get("role") == "user":
-            instruction = (
-                "[内部指令] 回复末尾加上 [CLASS:分类名]。"
-                "可选：财经金融/科技互联网/社会时事/娱乐八卦/体育赛事/"
-                "游戏动漫/音乐艺术/教育学习/健康医疗/美食旅行/生活消费/"
-                "汽车出行/时尚美妆/闲聊问候/功能咨询。"
-            )
-            msgs.insert(i, {"role": "system", "content": instruction})
-            break
 
 
 def _enrich_record(record: dict, body: dict, client_ip: str) -> dict:
@@ -586,8 +565,8 @@ async def _do_proxy_inner(request: Request, body: dict, client_ip: str) -> Respo
     start_time = time.time()
     model = body.get("model", "")
 
-    # 在最后一条用户消息末尾附加分类指令（比 system 消息可靠）
-    _inject_topic_classify(body)
+    # 使用关键词匹配做话题分类（从首条用户消息）
+    topic_pre = analytics.infer_topic(body)
 
     providers_to_try = []
 
@@ -682,57 +661,42 @@ def _record_error_for_provider(provider: str):
 async def _proxy_stream(client: httpx.AsyncClient, url: str,
                         body: dict, headers: dict, start_time: float = 0, client_ip: str = "", model: str = "") -> StreamingResponse:
     """流式转发——SSE 逐 token 返回。"""
-    topic = ""
+    topic = analytics.infer_topic(body)
+    _reasoning_buf = ""
     async def generate():
-        nonlocal topic
+        nonlocal topic, _reasoning_buf
         usage_info = {}
-        buf = b""
-        _meta_injected = False
+        sse_buf = b""
         try:
             async with client.stream("POST", url, json=body, headers=headers) as resp:
                 async for chunk in resp.aiter_bytes():
-                    buf += chunk
-                    # 尝试从缓冲区提取完整的 SSE 事件来处理
-                    while b"\n\n" in buf:
-                        event_bytes, _, buf = buf.partition(b"\n\n")
+                    yield chunk
+                    sse_buf += chunk
+                    # 逐条解析 SSE 事件（不受 chunk 边界影响）
+                    while b"\n\n" in sse_buf:
+                        event_bytes, _, sse_buf = sse_buf.partition(b"\n\n")
                         ev = event_bytes.decode(errors="replace").strip()
-                        if not ev:
+                        if not ev or ev == "data: [DONE]":
                             continue
-                        # 拦截上游 [DONE]
-                        if ev == "data: [DONE]":
-                            continue
-
                         if ev.startswith("data: "):
                             try:
-                                import json as _json
-                                ld = _json.loads(ev[6:].strip())
-
-                                # 检查并提取 [CLASS:xxx] 标记
-                                delta = ld.get("choices", [{}])[0].get("delta", {})
-                                content = delta.get("content", "")
-                                if content and "[CLASS" in content:
-                                    m = _CLASS_EXTRACT.search(content)
-                                    if m:
-                                        topic = m.group(1)
-                                    # 剥离所有 [CLASS...] 标记，不显示给用户
-                                    cleaned = _CLASS_STRIP.sub("", content)
-                                    if cleaned:
-                                        ld["choices"][0]["delta"]["content"] = cleaned
-                                        yield f"data: {_json.dumps(ld)}\n\n".encode()
-                                else:
-                                    yield event_bytes + b"\n\n"
-
-                                # 解析 usage
+                                ld = json.loads(ev[6:])
+                                # 积累 reasoning + content 用于 topic 重分类
+                                choices = ld.get("choices", [])
+                                if choices:
+                                    delta = choices[0].get("delta", {})
+                                    rc = delta.get("reasoning_content", "")
+                                    content = delta.get("content", "")
+                                    if rc:
+                                        _reasoning_buf += rc
+                                    elif content:
+                                        _reasoning_buf += content
+                                # 记录 usage
                                 u = ld.get("usage", {})
                                 if isinstance(u, dict) and u.get("prompt_tokens") is not None:
                                     usage_info = u
                             except Exception:
-                                yield event_bytes + b"\n\n"
-                        else:
-                            yield event_bytes + b"\n\n"
-                # 缓冲区剩余字节（理论不应有，兜底）
-                if buf:
-                    yield buf
+                                pass
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n".encode()
         finally:
@@ -748,17 +712,16 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
                     "total_tokens": usage_info.get("total_tokens", 0),
                 }
 
-                # 用 [CLASS:xxx] 分类，如果没有就是空值
-                if not topic:
-                    topic = ""
+                # 如果初始分类是"功能咨询"，用累积的推理内容重分类
+                if (not topic or topic == "功能咨询") and _reasoning_buf:
+                    topic = analytics.infer_topic_from_text(_reasoning_buf)
 
-                # 注入分类+用量元数据到流末尾
-                if not _meta_injected:
-                    _meta_injected = True
-                    meta = f"\n{topic} · 入 {stream_tokens['prompt_tokens']} · 出 {stream_tokens['completion_tokens']}"
-                    yield f"data: {json.dumps({'choices':[{'delta':{'content': meta}}]})}\n\n".encode()
+                # 注入 emoji 分类+用量元数据到流末尾
+                emoji = analytics.TOPIC_EMOJI.get(topic, "📌")
+                meta = f"\n━━━ {emoji} {topic} · 入 {stream_tokens['prompt_tokens']} · 出 {stream_tokens['completion_tokens']}"
+                yield f"data: {json.dumps({'choices':[{'delta':{'content': meta}}]})}\n\n".encode()
 
-                    analytics.enqueue_record(_enrich_record({
+                analytics.enqueue_record(_enrich_record({
                     "user_id": client_ip[:64], "model": model[:64],
                     "prompt_tokens": stream_tokens.get("prompt_tokens", 0),
                     "completion_tokens": stream_tokens.get("completion_tokens", 0),
@@ -790,23 +753,17 @@ async def _proxy_sync(client: httpx.AsyncClient, url: str,
         if isinstance(msgs, list):
             msg_count = len(msgs)
         usage_info = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-        topic = ""
+        topic = analytics.infer_topic(body)
         try:
             rd = json.loads(resp.content)
             u = rd.get("usage", {})
             if isinstance(u, dict):
                 usage_info = u
-            # 提取 [CLASS:xxx] 标记分类
+            # 注入 emoji 分类+用量元数据到响应内容末尾
+            emoji = analytics.TOPIC_EMOJI.get(topic, "📌")
             content = rd.get("choices", [{}])[0].get("message", {}).get("content", "")
-            if content and "[CLASS" in content:
-                m = _CLASS_EXTRACT.search(content)
-                if m:
-                    topic = m.group(1)
-                content = _CLASS_STRIP.sub("", content)
-                rd["choices"][0]["message"]["content"] = content
-
             if content:
-                meta = f"\n{topic} · 入 {usage_info.get('prompt_tokens', 0)} · 出 {usage_info.get('completion_tokens', 0)}"
+                meta = f"\n━━━ {emoji} {topic} · 入 {usage_info.get('prompt_tokens', 0)} · 出 {usage_info.get('completion_tokens', 0)}"
                 rd["choices"][0]["message"]["content"] = content + meta
                 modified = json.dumps(rd).encode()
                 analytics.enqueue_record(_enrich_record({
@@ -836,7 +793,7 @@ async def _proxy_sync(client: httpx.AsyncClient, url: str,
             "status": "error" if resp.status_code >= 400 else "success",
             "error_type": f"http_{resp.status_code}" if resp.status_code >= 400 else "",
             "streaming": False,
-            "topic": topic,
+            "topic": topic or "",
         }, body, client_ip))
     return Response(
         content=resp.content,
