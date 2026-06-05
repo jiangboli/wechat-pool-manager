@@ -27,10 +27,10 @@ async def get_dashboard():
         c.execute("SELECT count(*) FROM public.bindings WHERE bound_at >= CURRENT_DATE AND status != 'unbound'")
         data["today_new_users"] = c.fetchone()[0]
 
-        c.execute("SELECT user_id, count(*) FROM analytics.proxy_api_calls WHERE created_at >= CURRENT_DATE - 7 GROUP BY user_id ORDER BY count(*) DESC LIMIT 10")
+        c.execute("SELECT COALESCE(NULLIF(username,''), user_id) AS display_name, count(*) FROM analytics.proxy_api_calls WHERE created_at >= CURRENT_DATE - 7 GROUP BY display_name ORDER BY count(*) DESC LIMIT 10")
         data["top_req"] = [[r[0], r[1]] for r in c.fetchall()]
 
-        c.execute("SELECT user_id, COALESCE(SUM(total_tokens),0) FROM analytics.proxy_api_calls WHERE created_at >= CURRENT_DATE - 7 GROUP BY user_id ORDER BY SUM(total_tokens) DESC LIMIT 10")
+        c.execute("SELECT COALESCE(NULLIF(username,''), user_id) AS display_name, COALESCE(SUM(total_tokens),0) FROM analytics.proxy_api_calls WHERE created_at >= CURRENT_DATE - 7 GROUP BY display_name ORDER BY SUM(total_tokens) DESC LIMIT 10")
         data["top_tok"] = [[r[0], int(r[1])] for r in c.fetchall()]
 
         c.execute("SELECT to_char(created_at, 'MM-DD HH24'), count(*) FROM analytics.proxy_api_calls WHERE created_at >= CURRENT_DATE - 1 GROUP BY 1 ORDER BY 1")
