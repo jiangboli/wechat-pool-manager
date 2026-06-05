@@ -484,5 +484,6 @@ class HotPool:
         slot = self.slots.get(profile)
         if slot:
             slot.user_info = user_info
+            slot.refresh_count = 0  # 重置过期计数，给用户完整的刷新次数
             logger.info("[%s] 用户信息已绑定: %s", profile, user_info.get("user_name", ""))
 
