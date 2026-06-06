@@ -82,6 +82,7 @@ def init_analytics(pg_config: dict = None):
         _pg_pool = psycopg2.pool.ThreadedConnectionPool(
             minconn=1, maxconn=3,
             host=host, port=port, user=user, password=password, dbname=dbname,
+            keepalives=1, keepalives_idle=60, keepalives_interval=10, keepalives_count=3,
         )
         # 验证连接
         conn = _pg_pool.getconn()
@@ -285,99 +286,80 @@ def extract_msg_count(body: dict) -> int:
     return len(messages) if isinstance(messages, list) else 0
 
 
-# ── 分类关键词（对文本做关键词匹配，不做额外 LLM 调用） ────────────────
-_TOPIC_KEYWORDS = [
-    ("财经金融", ["买入", "卖出", "股票", "基金", "期货", "投资", "理财",
-                "仓位", "持仓", "下单", "买卖", "委托", "撤单", "成交",
-                "挂单", "涨停", "跌停", "盈亏", "收益", "行情", "股价",
-                "k线", "涨幅", "跌幅", "走势", "报价", "盘口", "换手",
-                "成交量", "开盘", "收盘", "茅台", "代码", "sh", "sz",
-                "账户", "资产", "余额", "资金", "银证", "转账",
-                "东方财富", "同花顺", "大智慧", "雪球", "财报", "市盈率",
-                "市值", "板块", "指数", "牛市", "熊市", "震荡", "反弹"]),
-    ("科技互联网", ["编译", "bug", "部署", "函数", "报错", "git",
-                 "docker", "python", "api", "服务器", "数据库",
-                 "前端", "后端", "程序", "电脑", "手机", "ai", "chatgpt",
-                 "编程", "软件", "app", "系统", "网络", "算法"]),
-    ("社会时事", ["新闻", "政策", "国际", "中国", "美国", "报道", "热点",
-                "调查", "官方", "政府", "社会", "民生", "法治", "外交",
-                "冲突", "战争", "选举", "制裁"]),
-    ("娱乐八卦", ["明星", "综艺", "电影", "电视剧", "八卦", "热搜", "粉丝",
-                "演唱会", "票房", "导演", "演员", "选秀", "出道", "绯闻"]),
-    ("体育赛事", ["足球", "篮球", "比赛", "联赛", "冠军", "nba", "cba",
-                "中超", "世界杯", "奥运", "选手", "教练", "球队", "进球",
-                "比分", "季后赛", "mvp"]),
-    ("游戏动漫", ["游戏", "动漫", "二次元", "动画", "皮肤", "装备", "副本",
-                "角色", "攻略", "抽卡", "原神", "王者", "吃鸡", "lol",
-                "我的世界", "steam", "主机", "switch"]),
-    ("音乐艺术", ["音乐", "歌曲", "唱歌", "歌手", "专辑", "歌词", "演唱会",
-                "乐器", "钢琴", "吉他", "艺术", "绘画", "设计", "摄影",
-                "展览", "美术馆"]),
-    ("教育学习", ["读书", "学习", "考试", "课程", "老师", "学生", "学校",
-                "大学", "考研", "留学", "英语", "阅读", "写作", "知识",
-                "论文", "研究", "培训", "证书"]),
-    ("健康医疗", ["健康", "养生", "看病", "医生", "医院", "药物", "运动",
-                "减肥", "饮食", "营养", "心理", "睡眠", "疫苗", "体检",
-                "中医", "症状", "治疗"]),
-    ("美食旅行", ["美食", "吃", "餐厅", "探店", "做饭", "菜谱", "外卖",
-                "旅游", "旅行", "酒店", "机票", "景点", "攻略", "签证",
-                "出国", "度假", "自驾"]),
-    ("生活消费", ["家居", "购物", "装修", "租房", "买房", "房产", "宠物",
-                "生活", "家务", "家电", "快递", "物流", "省钱", "优惠",
-                "兼职", "创业"]),
-    ("汽车出行", ["汽车", "车", "买车", "开车", "驾照", "加油", "保险",
-                "出行", "交通", "地铁", "公交", "共享", "违章"]),
-    ("时尚美妆", ["穿搭", "时尚", "衣服", "品牌", "护肤", "化妆", "口红",
-                "面膜", "防晒", "发型", "搭配", "奢侈品", "潮流"]),
-    ("闲聊问候", ["你好", "hi", "hello", "早上好", "晚上好", "下午好", "在吗",
-                "谢谢", "感谢", "好的", "嗯", "哈哈", "再见", "拜拜",
-                "help", "帮助", "请问", "你好啊"]),
+# ── 话题分类（LLM 方式，不用关键词匹配） ────────────────────────────────────
+
+TOPIC_NAMES = [
+    "财经金融", "科技互联网", "社会时事", "娱乐八卦", "体育赛事",
+    "游戏动漫", "音乐艺术", "教育学习", "健康医疗", "美食旅行",
+    "生活消费", "汽车出行", "时尚美妆", "闲聊问候", "功能咨询",
 ]
 
-
-def infer_topic_from_text(text: str) -> str:
-    """对任意文本做关键词匹配，返回分类名。"""
-    t = text[:500].lower()
-    for topic_name, words in _TOPIC_KEYWORDS:
-        for word in words:
-            if word in t:
-                return topic_name
-    return "功能咨询"
-
-
-def infer_topic(body: dict) -> str:
-    """从第一条用户消息推断话题分类。"""
-    messages = body.get("messages", [])
-    if not messages or not isinstance(messages, list):
-        return "其他"
-
-    first_user_msg = ""
-    for msg in messages:
-        if isinstance(msg, dict) and msg.get("role") == "user":
-            content = msg.get("content", "")
-            first_user_msg = content if isinstance(content, str) else str(content)
-            break
-
-    return infer_topic_from_text(first_user_msg)
-
-
-# ── Emoji 映射 ───────────────────────────────────────────────────────
-
 TOPIC_EMOJI = {
-    "财经金融": "📊",
-    "科技互联网": "💻",
-    "社会时事": "📰",
-    "娱乐八卦": "🎬",
-    "体育赛事": "⚽",
-    "游戏动漫": "🎮",
-    "音乐艺术": "🎵",
-    "教育学习": "📚",
-    "健康医疗": "💊",
-    "美食旅行": "🍜",
-    "生活消费": "🛒",
-    "汽车出行": "🚗",
-    "时尚美妆": "💄",
-    "闲聊问候": "💬",
-    "功能咨询": "🔧",
+    "财经金融": "📊", "科技互联网": "💻", "社会时事": "📰",
+    "娱乐八卦": "🎬", "体育赛事": "⚽", "游戏动漫": "🎮",
+    "音乐艺术": "🎵", "教育学习": "📚", "健康医疗": "💊",
+    "美食旅行": "🍜", "生活消费": "🛒", "汽车出行": "🚗",
+    "时尚美妆": "💄", "闲聊问候": "💬", "功能咨询": "🔧",
     "其他": "📌",
 }
+
+# 话题分类专用 API key（不消耗用户 key 的额度）
+_CLASSIFY_API_KEY = os.environ.get("CLASSIFY_API_KEY", "")
+_CLASSIFY_BASE_URL = os.environ.get("CLASSIFY_BASE_URL", "https://api.deepseek.com/v1")
+
+
+async def classify_topic_llm(
+    user_messages: list, bot_response: str,
+) -> str:
+    """使用 LLM 对对话内容进行话题分类（轻量级 deepseek-chat 调用，约百 token）。"""
+    # 构建对话摘要
+    conv_lines = []
+    for msg in (user_messages or []):
+        role = msg.get("role", "?")
+        content = msg.get("content", "")
+        if isinstance(content, str) and content:
+            conv_lines.append(f"{role}: {content[:200].strip()}")
+    conv_text = "\n".join(conv_lines[-6:])  # 最近 6 条消息
+
+    # 如果 bot 有回复也附上
+    if bot_response and len(bot_response) < 800:
+        conv_text += f"\nassistant: {bot_response[:500].strip()}"
+
+    if not conv_text.strip():
+        return "其他"
+
+    classify_body = {
+        "model": "deepseek-chat",
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    f"你是一个对话话题分类器。根据以下对话内容，判断用户的问题属于哪个分类。\n\n"
+                    f"可选分类：{'、'.join(TOPIC_NAMES)}\n\n"
+                    f"只返回分类名称，不要任何其他内容。"
+                ),
+            },
+            {"role": "user", "content": conv_text[:2000]},
+        ],
+        "max_tokens": 8,
+        "temperature": 0,
+    }
+
+    try:
+        if not _CLASSIFY_API_KEY:
+            return "其他"
+        import httpx
+        async with httpx.AsyncClient(timeout=10) as hc:
+            resp = await hc.post(
+                f"{_CLASSIFY_BASE_URL}/chat/completions",
+                json=classify_body,
+                headers={"Authorization": f"Bearer {_CLASSIFY_API_KEY}", "Content-Type": "application/json"},
+            )
+            data = resp.json()
+            topic = data["choices"][0]["message"]["content"].strip()
+            if topic in TOPIC_NAMES:
+                return topic
+    except Exception:
+        pass
+
+    return "其他"

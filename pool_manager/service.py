@@ -35,13 +35,6 @@ from . import docker_scheduler as ds
 from .pg_store import pg_store
 
 # ── 日志 ──────────────────────────────────────────────────────────────
-import sys
-import io
-
-# 确保容器 locale=C/POSIX 下日志输出支持中文
-if sys.stderr.encoding and 'utf' not in sys.stderr.encoding.lower():
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
@@ -821,7 +814,7 @@ def main():
 
     log_dir = resolve_path(config.get("logging", {}).get("dir", "~/.hermes/wechat-pool/logs/"))
     os.makedirs(log_dir, exist_ok=True)
-    fh = logging.FileHandler(os.path.join(log_dir, "pool_manager.log"), encoding="utf-8")
+    fh = logging.FileHandler(os.path.join(log_dir, "pool_manager.log"))
     fh.setFormatter(logging.Formatter("%(asctime)s [%(name)s] %(levelname)s: %(message)s"))
     logging.getLogger().addHandler(fh)
     logging.getLogger().setLevel(config.get("logging", {}).get("level", "INFO"))
