@@ -158,6 +158,20 @@ async def _batch_insert(records: list):
     conn = None
     try:
         conn = _pg_pool.getconn()
+
+        # 验证连接是否存活（防止 PG 侧超时断开的 stale 连接）
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+            cur.close()
+        except Exception:
+            # stale 连接，丢弃并重拿
+            try:
+                _pg_pool.putconn(conn, close=True)
+            except Exception:
+                pass
+            conn = _pg_pool.getconn()
+
         cur = conn.cursor()
 
         values = []
@@ -197,10 +211,16 @@ async def _batch_insert(records: list):
     except Exception as e:
         logger.warning("Analytics 批量写入失败: %s", e)
         if conn:
-            conn.rollback()
+            try:
+                conn.rollback()
+            except Exception:
+                pass
     finally:
         if conn and _pg_pool:
-            _pg_pool.putconn(conn)
+            try:
+                _pg_pool.putconn(conn)
+            except Exception:
+                pass
 
 
 def _make_record(
