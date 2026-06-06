@@ -142,13 +142,7 @@ def _lookup_container_ip(ip: str) -> str:
     return name.replace("hermes-", "") if name else ""
 
 def _enrich_record(record: dict, body: dict, client_ip: str) -> dict:
-    try:
-        if "topic" not in record or not record.get("topic"):
-            record["topic"] = analytics.infer_topic(body)
-    except Exception:
-        record["topic"] = "其他"
-        record["topic"] = "其他"
-
+    # topic 已在上层设好，这里只补充 IP 和用户信息
     try:
 
         profile = _lookup_container_ip(client_ip)
@@ -1066,7 +1060,7 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
 
     """流式转发——SSE 逐 token 返回。"""
 
-    topic = analytics.infer_topic(body)
+    topic = ""
 
     _reasoning_buf = ""
 
@@ -1164,11 +1158,15 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
 
                 }
 
-                # 用 _reasoning_buf 增强分类（仅当初始分类不确定时）
-                if _reasoning_buf and topic in ("功能咨询", "其他"):
-                    re_topic = analytics.infer_topic_from_text(_reasoning_buf)
-                    if re_topic:
-                        topic = re_topic
+                # 用 LLM 分类对话话题（轻量级 deepseek-chat 调用）
+                if _reasoning_buf or body.get("messages"):
+                    try:
+                        topic = await analytics.classify_topic_llm(
+                            client, url, headers,
+                            body.get("messages", []), _reasoning_buf,
+                        )
+                    except Exception:
+                        topic = "其他"
 
                 emoji = analytics.TOPIC_EMOJI.get(topic, "📌")
 
@@ -1248,11 +1246,19 @@ async def _proxy_sync(client: httpx.AsyncClient, url: str,
 
             # 注入分类+用量元数据到响应内容末尾
 
-            topic = analytics.infer_topic(body)
+            content = rd.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+            # 用 LLM 分类对话话题
+            topic = "其他"
+            try:
+                topic = await analytics.classify_topic_llm(
+                    client, url, headers,
+                    body.get("messages", []), content,
+                )
+            except Exception:
+                pass
 
             emoji = analytics.TOPIC_EMOJI.get(topic, "📌")
-
-            content = rd.get("choices", [{}])[0].get("message", {}).get("content", "")
 
             if content:
 
