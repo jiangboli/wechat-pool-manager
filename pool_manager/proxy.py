@@ -1164,12 +1164,9 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
 
                 }
 
-                # 用 _reasoning_buf（模型推理内容+回复）重新分类，覆盖关键词误判
-
-                if _reasoning_buf:
-
+                # 用 _reasoning_buf 增强分类（仅当初始分类不确定时）
+                if _reasoning_buf and topic in ("功能咨询", "其他"):
                     re_topic = analytics.infer_topic_from_text(_reasoning_buf)
-
                     if re_topic:
                         topic = re_topic
 
