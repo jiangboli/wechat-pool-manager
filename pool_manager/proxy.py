@@ -142,13 +142,11 @@ def _lookup_container_ip(ip: str) -> str:
     return name.replace("hermes-", "") if name else ""
 
 def _enrich_record(record: dict, body: dict, client_ip: str) -> dict:
-
     try:
-
-        record["topic"] = analytics.infer_topic(body)
-
+        if "topic" not in record or not record.get("topic"):
+            record["topic"] = analytics.infer_topic(body)
     except Exception:
-
+        record["topic"] = "其他"
         record["topic"] = "其他"
 
     try:
@@ -1166,11 +1164,14 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
 
                 }
 
-                # 如果初始分类是功能咨询，用 _reasoning_buf 重新分类
+                # 用 _reasoning_buf（模型推理内容+回复）重新分类，覆盖关键词误判
 
-                if (not topic or topic == "功能咨询") and _reasoning_buf:
+                if _reasoning_buf:
 
-                    topic = analytics.infer_topic_from_text(_reasoning_buf)
+                    re_topic = analytics.infer_topic_from_text(_reasoning_buf)
+
+                    if re_topic:
+                        topic = re_topic
 
                 emoji = analytics.TOPIC_EMOJI.get(topic, "📌")
 
