@@ -82,6 +82,7 @@ def init_analytics(pg_config: dict = None):
         _pg_pool = psycopg2.pool.ThreadedConnectionPool(
             minconn=1, maxconn=3,
             host=host, port=port, user=user, password=password, dbname=dbname,
+            keepalives=1, keepalives_idle=60, keepalives_interval=10, keepalives_count=3,
         )
         # 验证连接
         conn = _pg_pool.getconn()
@@ -302,9 +303,12 @@ TOPIC_EMOJI = {
     "其他": "📌",
 }
 
+# 话题分类专用 API key（不消耗用户 key 的额度）
+_CLASSIFY_API_KEY = os.environ.get("CLASSIFY_API_KEY", "")
+_CLASSIFY_BASE_URL = os.environ.get("CLASSIFY_BASE_URL", "https://api.deepseek.com/v1")
+
 
 async def classify_topic_llm(
-    client, base_url: str, request_headers: dict,
     user_messages: list, bot_response: str,
 ) -> str:
     """使用 LLM 对对话内容进行话题分类（轻量级 deepseek-chat 调用，约百 token）。"""
@@ -342,13 +346,19 @@ async def classify_topic_llm(
     }
 
     try:
-        resp = await client.post(
-            base_url, json=classify_body, headers=request_headers, timeout=6,
-        )
-        data = resp.json()
-        topic = data["choices"][0]["message"]["content"].strip()
-        if topic in TOPIC_NAMES:
-            return topic
+        if not _CLASSIFY_API_KEY:
+            return "其他"
+        import httpx
+        async with httpx.AsyncClient(timeout=10) as hc:
+            resp = await hc.post(
+                f"{_CLASSIFY_BASE_URL}/chat/completions",
+                json=classify_body,
+                headers={"Authorization": f"Bearer {_CLASSIFY_API_KEY}", "Content-Type": "application/json"},
+            )
+            data = resp.json()
+            topic = data["choices"][0]["message"]["content"].strip()
+            if topic in TOPIC_NAMES:
+                return topic
     except Exception:
         pass
 

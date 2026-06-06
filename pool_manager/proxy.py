@@ -163,6 +163,8 @@ def _enrich_record(record: dict, body: dict, client_ip: str) -> dict:
 
                 dbname=os.environ.get("ANALYTICS_PG_DB", "claw_do"),
 
+                keepalives=1, keepalives_idle=60, keepalives_interval=10, keepalives_count=3,
+
             )
 
             cur = conn.cursor()
