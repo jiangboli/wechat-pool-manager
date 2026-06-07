@@ -192,7 +192,7 @@ async def _batch_insert(records: list):
                 r.get("status", "success"),
                 r.get("error_type", ""),
                 r.get("streaming", False),
-                r.get("topic", "其他"),
+                r.get("topic", "功能咨询"),
                 r.get("created_at", time.strftime("%Y-%m-%dT%H:%M:%S")),
                 r.get("username", ""),
                 r.get("phone", ""),
@@ -224,36 +224,6 @@ async def _batch_insert(records: list):
                 pass
 
 
-def _make_record(
-    user_id: str,
-    model: str,
-    prompt_tokens: int = 0,
-    completion_tokens: int = 0,
-    total_tokens: int = 0,
-    latency_ms: int = 0,
-    msg_count: int = 0,
-    status: str = "success",
-    error_type: str = "",
-    streaming: bool = False,
-    topic: str = "其他",
-) -> dict:
-    """构造一条 analytics 记录。"""
-    return {
-        "user_id": user_id[:64],
-        "model": model[:64],
-        "prompt_tokens": prompt_tokens,
-        "completion_tokens": completion_tokens,
-        "total_tokens": total_tokens,
-        "latency_ms": latency_ms,
-        "msg_count": msg_count,
-        "status": status,
-        "error_type": error_type[:32],
-        "streaming": streaming,
-        "topic": topic[:32],
-        "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-    }
-
-
 def enqueue_record(record: dict):
     """将一条记录加入写入队列。
 
@@ -268,25 +238,7 @@ def enqueue_record(record: dict):
         logger.warning("Analytics 队列已满（%d），丢弃一条记录", QUEUE_MAX_SIZE)
 
 
-def extract_tokens_from_response(response_data: dict) -> dict:
-    """从 LLM 响应中提取 token 使用量。"""
-    usage = response_data.get("usage", {})
-    if isinstance(usage, dict):
-        return {
-            "prompt_tokens": usage.get("prompt_tokens", 0),
-            "completion_tokens": usage.get("completion_tokens", 0),
-            "total_tokens": usage.get("total_tokens", 0),
-        }
-    return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-
-
-def extract_msg_count(body: dict) -> int:
-    """从请求 body 中提取消息轮数。"""
-    messages = body.get("messages", [])
-    return len(messages) if isinstance(messages, list) else 0
-
-
-# ── 话题分类（LLM 方式，不用关键词匹配） ────────────────────────────────────
+# ── 话题分类（LLM + 关键词兜底） ──────────────────────────────────
 
 TOPIC_NAMES = [
     "财经金融", "科技互联网", "社会时事", "娱乐八卦", "体育赛事",
@@ -300,20 +252,39 @@ TOPIC_EMOJI = {
     "音乐艺术": "🎵", "教育学习": "📚", "健康医疗": "💊",
     "美食旅行": "🍜", "生活消费": "🛒", "汽车出行": "🚗",
     "时尚美妆": "💄", "闲聊问候": "💬", "功能咨询": "🔧",
-    "其他": "📌",
 }
 
-# 话题分类专用 API key（不消耗用户 key 的额度）
-_CLASSIFY_API_KEY = os.environ.get("CLASSIFY_API_KEY", "")
-_CLASSIFY_BASE_URL = os.environ.get("CLASSIFY_BASE_URL", "https://api.deepseek.com/v1")
+
+_TOPIC_KEYWORDS = [
+    ("财经金融", ["买入", "卖出", "股票", "基金", "期货", "投资", "理财",
+                "仓位", "持仓", "下单", "委托", "撤单", "成交",
+                "挂单", "涨停", "跌停", "盈亏", "收益", "行情", "股价",
+                "走势", "报价", "盘口", "换手", "成交量", "开盘", "收盘",
+                "账户", "资产", "余额", "资金", "转账",
+                "财报", "市值", "板块", "指数", "牛市", "熊市", "震荡", "反弹"]),
+    ("科技互联网", ["编译", "bug", "部署", "函数", "报错", "git",
+                  "python", "api", "服务器", "数据库", "编程"]),
+    ("闲聊问候", ["你好", "hi", "hello", "早上好", "晚上好", "下午好",
+                "在吗", "谢谢", "感谢", "好的", "嗯", "再见", "拜拜"]),
+]
+
+
+def _keyword_fallback(text: str) -> str:
+    """关键词兜底分类——确保永远不返回'其他'。"""
+    t = text[:1000].lower()
+    for topic_name, words in _TOPIC_KEYWORDS:
+        for word in words:
+            if word in t:
+                return topic_name
+    return "功能咨询"
 
 
 async def classify_topic_llm(
     user_messages: list, bot_response: str,
     api_key: str = None, base_url: str = None,
 ) -> str:
-    """使用 LLM 对对话内容进行话题分类（轻量级 deepseek-chat 调用，约百 token）。"""
-    # 构建对话摘要
+    """话题分类：先尝试 LLM，失败后关键词兜底。永不返回'其他'。"""
+    # 构建对话摘要（供 LLM 和关键词兜底共用）
     conv_lines = []
     for msg in (user_messages or []):
         role = msg.get("role", "?")
@@ -322,49 +293,47 @@ async def classify_topic_llm(
             conv_lines.append(f"{role}: {content[:200].strip()}")
     conv_text = "\n".join(conv_lines[-6:])  # 最近 6 条消息
 
-    # 如果 bot 有回复也附上
     if bot_response and len(bot_response) < 800:
         conv_text += f"\nassistant: {bot_response[:500].strip()}"
 
     if not conv_text.strip():
-        return "其他"
+        return "功能咨询"
 
-    classify_body = {
-        "model": "deepseek-chat",
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    f"你是一个对话话题分类器。根据以下对话内容，判断用户的问题属于哪个分类。\n\n"
-                    f"可选分类：{'、'.join(TOPIC_NAMES)}\n\n"
-                    f"只返回分类名称，不要任何其他内容。"
-                ),
-            },
-            {"role": "user", "content": conv_text[:2000]},
-        ],
-        "max_tokens": 8,
-        "temperature": 0,
-    }
+    # ── 第一阶段：LLM 分类 ──
+    classify_key = api_key or os.environ.get("CLASSIFY_API_KEY", "")
+    classify_url = (base_url or os.environ.get("CLASSIFY_BASE_URL", "https://api.deepseek.com/v1")).rstrip("/")
 
-    try:
-        # 优先使用传入的凭据，后备从环境变量读取
-        classify_key = api_key or os.environ.get("CLASSIFY_API_KEY", "")
-        classify_url = (base_url or os.environ.get("CLASSIFY_BASE_URL", "https://api.deepseek.com/v1")).rstrip("/")
+    if classify_key:
+        classify_body = {
+            "model": "deepseek-chat",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        f"你是一个对话话题分类器。根据以下对话内容，判断用户的问题属于哪个分类。\n\n"
+                        f"可选分类：{'、'.join(TOPIC_NAMES)}\n\n"
+                        f"只返回分类名称，不要任何其他内容。"
+                    ),
+                },
+                {"role": "user", "content": conv_text[:2000]},
+            ],
+            "max_tokens": 8,
+            "temperature": 0,
+        }
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10) as hc:
+                resp = await hc.post(
+                    f"{classify_url}/chat/completions",
+                    json=classify_body,
+                    headers={"Authorization": f"Bearer {classify_key}", "Content-Type": "application/json"},
+                )
+                data = resp.json()
+                topic = data["choices"][0]["message"]["content"].strip()
+                if topic in TOPIC_NAMES and topic != "其他":
+                    return topic
+        except Exception:
+            pass
 
-        if not classify_key:
-            return "其他"
-        import httpx
-        async with httpx.AsyncClient(timeout=10) as hc:
-            resp = await hc.post(
-                f"{classify_url}/chat/completions",
-                json=classify_body,
-                headers={"Authorization": f"Bearer {classify_key}", "Content-Type": "application/json"},
-            )
-            data = resp.json()
-            topic = data["choices"][0]["message"]["content"].strip()
-            if topic in TOPIC_NAMES:
-                return topic
-    except Exception:
-        pass
-
-    return "其他"
+    # ── 第二阶段：关键词兜底 ──
+    return _keyword_fallback(conv_text)
