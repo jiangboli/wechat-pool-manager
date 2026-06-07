@@ -92,13 +92,22 @@ def _enrich_record(record: dict, body: dict, client_ip: str) -> dict:
     try:
         profile = _lookup_container_ip(client_ip)
         if profile:
+            # 连接信息必须从环境变量读取，代码中不存储任何凭据
+            pg_host = os.environ.get("ANALYTICS_PG_HOST", "")
+            pg_port = os.environ.get("ANALYTICS_PG_PORT", "")
+            pg_user = os.environ.get("ANALYTICS_PG_USER", "")
+            pg_pass = os.environ.get("ANALYTICS_PG_PASSWORD", "")
+            pg_db = os.environ.get("ANALYTICS_PG_DB", "")
+            if not all([pg_host, pg_port, pg_user, pg_pass, pg_db]):
+                logger.debug("ANALYTICS_PG_* 环境变量未配置，跳过补充用户信息")
+                return record
             import psycopg2
             conn = psycopg2.connect(
-                host=os.environ.get("ANALYTICS_PG_HOST", "125.67.215.86"),
-                port=int(os.environ.get("ANALYTICS_PG_PORT", "5432")),
-                user=os.environ.get("ANALYTICS_PG_USER", "claw_do_user"),
-                password=os.environ.get("ANALYTICS_PG_PASSWORD", "dosh_13579"),
-                dbname=os.environ.get("ANALYTICS_PG_DB", "claw_do"),
+                host=pg_host,
+                port=int(pg_port),
+                user=pg_user,
+                password=pg_pass,
+                dbname=pg_db,
             )
             cur = conn.cursor()
             cur.execute("SELECT user_name, phone, lobster_name FROM public.bindings WHERE profile_name = %s", (profile,))
