@@ -92,16 +92,27 @@ def _enrich_record(record: dict, body: dict, client_ip: str) -> dict:
     try:
         profile = _lookup_container_ip(client_ip)
         if profile:
-            # 连接信息必须从环境变量读取，代码中不存储任何凭据
+            import psycopg2
+            # 优先 ANALYTICS_PG_* 环境变量，后备从 CLAW_DO_DSN 解析（不存储任何凭据）
             pg_host = os.environ.get("ANALYTICS_PG_HOST", "")
             pg_port = os.environ.get("ANALYTICS_PG_PORT", "")
             pg_user = os.environ.get("ANALYTICS_PG_USER", "")
             pg_pass = os.environ.get("ANALYTICS_PG_PASSWORD", "")
             pg_db = os.environ.get("ANALYTICS_PG_DB", "")
             if not all([pg_host, pg_port, pg_user, pg_pass, pg_db]):
-                logger.debug("ANALYTICS_PG_* 环境变量未配置，跳过补充用户信息")
-                return record
-            import psycopg2
+                dsn = os.environ.get("CLAW_DO_DSN", "")
+                if dsn:
+                    try:
+                        parts = dsn.split("://", 1)[-1]
+                        user_pass, rest = parts.split("@", 1)
+                        pg_user, pg_pass = user_pass.split(":", 1)
+                        host_port, pg_db = rest.split("/", 1)
+                        pg_host, pg_port = (host_port.split(":", 1) if ":" in host_port else (host_port, "5432"))
+                    except Exception:
+                        logger.debug("从 CLAW_DO_DSN 解析 PG 连接失败: %s", dsn[:30])
+                        return record
+                else:
+                    return record
             conn = psycopg2.connect(
                 host=pg_host,
                 port=int(pg_port),
@@ -695,11 +706,8 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
                 # 用 LLM 分类 topic
                 if not topic:
                     try:
-                        classify_key = _select_key("deepseek")
-                        classify_url = _get_base_url("deepseek")
                         topic = await analytics.classify_topic_llm(
                             body.get("messages", []), _reasoning_buf,
-                            api_key=classify_key, base_url=classify_url,
                         )
                     except Exception:
                         topic = "其他"
@@ -750,11 +758,8 @@ async def _proxy_sync(client: httpx.AsyncClient, url: str,
                 # 用 LLM 分类 topic
                 topic = ""
                 try:
-                    classify_key = _select_key("deepseek")
-                    classify_url = _get_base_url("deepseek")
                     topic = await analytics.classify_topic_llm(
                         body.get("messages", []), content,
-                        api_key=classify_key, base_url=classify_url,
                     )
                 except Exception:
                     topic = "其他"
