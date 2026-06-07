@@ -310,6 +310,7 @@ _CLASSIFY_BASE_URL = os.environ.get("CLASSIFY_BASE_URL", "https://api.deepseek.c
 
 async def classify_topic_llm(
     user_messages: list, bot_response: str,
+    api_key: str = None, base_url: str = None,
 ) -> str:
     """使用 LLM 对对话内容进行话题分类（轻量级 deepseek-chat 调用，约百 token）。"""
     # 构建对话摘要
@@ -346,14 +347,18 @@ async def classify_topic_llm(
     }
 
     try:
-        if not _CLASSIFY_API_KEY:
+        # 优先使用传入的凭据，后备从环境变量读取
+        classify_key = api_key or os.environ.get("CLASSIFY_API_KEY", "")
+        classify_url = (base_url or os.environ.get("CLASSIFY_BASE_URL", "https://api.deepseek.com/v1")).rstrip("/")
+
+        if not classify_key:
             return "其他"
         import httpx
         async with httpx.AsyncClient(timeout=10) as hc:
             resp = await hc.post(
-                f"{_CLASSIFY_BASE_URL}/chat/completions",
+                f"{classify_url}/chat/completions",
                 json=classify_body,
-                headers={"Authorization": f"Bearer {_CLASSIFY_API_KEY}", "Content-Type": "application/json"},
+                headers={"Authorization": f"Bearer {classify_key}", "Content-Type": "application/json"},
             )
             data = resp.json()
             topic = data["choices"][0]["message"]["content"].strip()
