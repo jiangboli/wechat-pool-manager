@@ -695,8 +695,11 @@ async def _proxy_stream(client: httpx.AsyncClient, url: str,
                 # 用 LLM 分类 topic
                 if not topic:
                     try:
+                        classify_key = _select_key("deepseek")
+                        classify_url = _get_base_url("deepseek")
                         topic = await analytics.classify_topic_llm(
                             body.get("messages", []), _reasoning_buf,
+                            api_key=classify_key, base_url=classify_url,
                         )
                     except Exception:
                         topic = "其他"
@@ -747,8 +750,11 @@ async def _proxy_sync(client: httpx.AsyncClient, url: str,
                 # 用 LLM 分类 topic
                 topic = ""
                 try:
+                    classify_key = _select_key("deepseek")
+                    classify_url = _get_base_url("deepseek")
                     topic = await analytics.classify_topic_llm(
                         body.get("messages", []), content,
+                        api_key=classify_key, base_url=classify_url,
                     )
                 except Exception:
                     topic = "其他"
