@@ -11,7 +11,7 @@ async def get_dashboard():
         c = conn.cursor()
         data = {}
 
-        c.execute("SELECT count(*), COALESCE(SUM(total_tokens),0), count(*) FILTER (WHERE error_type != ''), COALESCE(round(AVG(latency_ms)),0) FROM analytics.proxy_api_calls WHERE created_at >= CURRENT_DATE")
+        c.execute("SELECT count(*), COALESCE(SUM(total_tokens),0), count(*) FILTER (WHERE error_type != ''), COALESCE(round(AVG(latency_ms)),0) FROM analytics.proxy_api_calls WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai'")
         r = c.fetchone()
         data["today_calls"] = r[0]
         data["today_tokens"] = r[1]
@@ -24,10 +24,10 @@ async def get_dashboard():
         c.execute("SELECT count(*) FROM public.bindings WHERE status != 'unbound'")
         data["total_users"] = c.fetchone()[0]
 
-        c.execute("SELECT count(*) FROM public.bindings WHERE bound_at >= CURRENT_DATE AND status != 'unbound'")
+        c.execute("SELECT count(*) FROM public.bindings WHERE bound_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai' AND status != 'unbound'")
         data["today_new_users"] = c.fetchone()[0]
 
-        c.execute("SELECT COALESCE(NULLIF(username,''), user_id) AS display_name, COALESCE(SUM(total_tokens),0) FROM analytics.proxy_api_calls WHERE created_at >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date GROUP BY display_name ORDER BY SUM(total_tokens) DESC LIMIT 10")
+        c.execute("SELECT COALESCE(NULLIF(username,''), user_id) AS display_name, COALESCE(SUM(total_tokens),0) FROM analytics.proxy_api_calls WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai' GROUP BY display_name ORDER BY SUM(total_tokens) DESC LIMIT 10")
         data["top_req"] = [[r[0], int(r[1])] for r in c.fetchall()]
 
         c.execute("SELECT COALESCE(NULLIF(username,''), user_id) AS display_name, COALESCE(SUM(total_tokens),0) FROM analytics.proxy_api_calls WHERE created_at >= CURRENT_DATE - 7 GROUP BY display_name ORDER BY SUM(total_tokens) DESC LIMIT 10")
@@ -60,7 +60,7 @@ async def get_dashboard():
         c.execute("""
             SELECT DISTINCT ON (label) label, balance
             FROM analytics.balance_snapshots
-            WHERE snapshot_at >= CURRENT_DATE
+            WHERE snapshot_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai'
             ORDER BY label, snapshot_at ASC
         """)
         today_first = {r[0]: float(r[1]) for r in c.fetchall()}
@@ -68,7 +68,7 @@ async def get_dashboard():
         c.execute("""
             SELECT DISTINCT ON (label) label, balance
             FROM analytics.balance_snapshots
-            WHERE snapshot_at >= date_trunc('month', CURRENT_DATE)
+            WHERE snapshot_at >= date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai'
             ORDER BY label, snapshot_at ASC
         """)
         month_first = {r[0]: float(r[1]) for r in c.fetchall()}
