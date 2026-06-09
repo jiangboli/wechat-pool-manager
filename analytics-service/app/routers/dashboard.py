@@ -18,7 +18,7 @@ async def get_dashboard():
         data["today_errors"] = r[2]
         data["avg_latency"] = r[3]
 
-        c.execute("SELECT count(DISTINCT user_id) FROM analytics.proxy_api_calls WHERE created_at >= CURRENT_DATE - 7")
+        c.execute("SELECT count(DISTINCT user_id) FROM analytics.proxy_api_calls WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai' - INTERVAL '7 days'")
         data["active_users_7d"] = c.fetchone()[0]
 
         c.execute("SELECT count(*) FROM public.bindings WHERE status != 'unbound'")
@@ -30,21 +30,21 @@ async def get_dashboard():
         c.execute("SELECT COALESCE(NULLIF(username,''), user_id) AS display_name, COALESCE(SUM(total_tokens),0) FROM analytics.proxy_api_calls WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai' GROUP BY display_name ORDER BY SUM(total_tokens) DESC LIMIT 10")
         data["top_req"] = [[r[0], int(r[1])] for r in c.fetchall()]
 
-        c.execute("SELECT COALESCE(NULLIF(username,''), user_id) AS display_name, COALESCE(SUM(total_tokens),0) FROM analytics.proxy_api_calls WHERE created_at >= CURRENT_DATE - 7 GROUP BY display_name ORDER BY SUM(total_tokens) DESC LIMIT 10")
+        c.execute("SELECT COALESCE(NULLIF(username,''), user_id) AS display_name, COALESCE(SUM(total_tokens),0) FROM analytics.proxy_api_calls WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai' - INTERVAL '7 days' GROUP BY display_name ORDER BY SUM(total_tokens) DESC LIMIT 10")
         data["top_tok"] = [[r[0], int(r[1])] for r in c.fetchall()]
 
-        c.execute("SELECT to_char(created_at + INTERVAL '8 hours', 'MM-DD HH24'), count(*) FROM analytics.proxy_api_calls WHERE created_at >= CURRENT_DATE - 1 GROUP BY 1 ORDER BY 1")
+        c.execute("SELECT to_char(created_at + INTERVAL '8 hours', 'MM-DD HH24'), count(*) FROM analytics.proxy_api_calls WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai' - INTERVAL '1 day' GROUP BY 1 ORDER BY 1")
         rows = c.fetchall()
         data["trend_labels"] = [r[0] for r in rows]
         data["trend_data"] = [r[1] for r in rows]
 
-        c.execute("SELECT to_char(created_at, 'MM-DD'), COALESCE(SUM(total_tokens), 0) FROM analytics.proxy_api_calls WHERE created_at >= CURRENT_DATE - 30 GROUP BY 1 ORDER BY 1")
+        c.execute("SELECT to_char(created_at + INTERVAL '8 hours', 'MM-DD'), COALESCE(SUM(total_tokens), 0) FROM analytics.proxy_api_calls WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai' - INTERVAL '30 days' GROUP BY 1 ORDER BY 1")
         rows = c.fetchall()
         data["token_trend_labels"] = [r[0] for r in rows]
         data["token_trend_data"] = [int(r[1]) for r in rows]
 
         # 话题分布（7天）
-        c.execute("SELECT topic, count(*) FROM analytics.proxy_api_calls WHERE created_at >= CURRENT_DATE - 7 AND topic != '' GROUP BY topic ORDER BY count(*) DESC")
+        c.execute("SELECT topic, count(*) FROM analytics.proxy_api_calls WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai' - INTERVAL '7 days' AND topic != '' GROUP BY topic ORDER BY count(*) DESC")
         rows = c.fetchall()
         data["topic_labels"] = [r[0] for r in rows]
         data["topic_data"] = [r[1] for r in rows]
