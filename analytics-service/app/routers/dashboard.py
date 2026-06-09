@@ -49,6 +49,54 @@ async def get_dashboard():
         data["topic_labels"] = [r[0] for r in rows]
         data["topic_data"] = [r[1] for r in rows]
 
+        # 余额快照 - 每个 label 最新余额 + 消耗计算
+        c.execute("""
+            SELECT DISTINCT ON (label) label, balance, snapshot_at
+            FROM analytics.balance_snapshots
+            ORDER BY label, snapshot_at DESC
+        """)
+        latest_rows = {r[0]: {"balance": float(r[1]), "snapshot_at": r[2].isoformat()} for r in c.fetchall()}
+
+        c.execute("""
+            SELECT DISTINCT ON (label) label, balance
+            FROM analytics.balance_snapshots
+            WHERE snapshot_at >= CURRENT_DATE
+            ORDER BY label, snapshot_at ASC
+        """)
+        today_first = {r[0]: float(r[1]) for r in c.fetchall()}
+
+        c.execute("""
+            SELECT DISTINCT ON (label) label, balance
+            FROM analytics.balance_snapshots
+            WHERE snapshot_at >= date_trunc('month', CURRENT_DATE)
+            ORDER BY label, snapshot_at ASC
+        """)
+        month_first = {r[0]: float(r[1]) for r in c.fetchall()}
+
+        if latest_rows:
+            total_balance = 0.0
+            total_today = 0.0
+            total_month = 0.0
+            balances_list = []
+            for label, info in sorted(latest_rows.items()):
+                bal = info["balance"]
+                today_cost = max(0.0, round((today_first.get(label, bal) - bal), 2))
+                month_cost = max(0.0, round((month_first.get(label, bal) - bal), 2))
+                total_balance += bal
+                total_today += today_cost
+                total_month += month_cost
+                balances_list.append({"label": label, "balance": round(bal, 2), "today_cost": today_cost, "month_cost": month_cost})
+
+            data["total_balance"] = round(total_balance, 2)
+            data["today_cost"] = round(total_today, 2)
+            data["month_cost"] = round(total_month, 2)
+            data["balances"] = balances_list
+        else:
+            data["total_balance"] = None
+            data["today_cost"] = None
+            data["month_cost"] = None
+            data["balances"] = []
+
         return data
     finally:
         put_conn(conn)
