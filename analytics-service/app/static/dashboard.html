@@ -36,7 +36,7 @@ td{font-family:monospace}
 <div class=c><div class=l>💰 总余额</div><div class=n style=color:#fbbf24 id=totalBalance>-</div></div>
 <div class=c><div class=l>📉 今日消耗</div><div class=n style=color:#f87171 id=todayCost>-</div></div>
 </div>
-<div class=r><div class=b><h3>请求排行 Top10（7天）</h3><table id=reqTable><tr><th>#</th><th>用户</th><th>请求</th></tr></table></div>
+<div class=r><div class=b><h3>Token排行 Top10（今天）</h3><table id=reqTable><tr><th>#</th><th>用户</th><th>Token(万)</th></tr></table></div>
 <div class=b><h3>Token排行 Top10（7天）</h3><table id=tokenTable><tr><th>#</th><th>用户</th><th>Token(万)</th></tr></table></div></div>
 <div class=r>
 <div class=b><h3>24h请求趋势</h3><div style=height:250px><canvas id=c1></canvas></div></div>
@@ -85,8 +85,8 @@ async function load(){
       });
     }
     var rt=document.getElementById('reqTable');
-    rt.innerHTML='<tr><th>#</th><th>用户</th><th>请求</th></tr>';
-    d.top_req.forEach(function(r,i){rt.innerHTML+='<tr><td>'+(i+1)+'</td><td>'+r[0]+'</td><td>'+fmt(r[1])+'</td></tr>'});
+    rt.innerHTML='<tr><th>#</th><th>用户</th><th>Token(万)</th></tr>';
+    d.top_req.forEach(function(r,i){rt.innerHTML+='<tr><td>'+(i+1)+'</td><td>'+r[0]+'</td><td>'+fmtWan(r[1])+'</td></tr>'});
     var tt=document.getElementById('tokenTable');
     tt.innerHTML='<tr><th>#</th><th>用户</th><th>Token(万)</th></tr>';
     d.top_tok.forEach(function(r,i){tt.innerHTML+='<tr><td>'+(i+1)+'</td><td>'+r[0]+'</td><td>'+fmtWan(r[1])+'</td></tr>'});
