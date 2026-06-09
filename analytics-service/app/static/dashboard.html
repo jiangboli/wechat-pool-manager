@@ -40,7 +40,7 @@ td{font-family:monospace}
 <div class=b><h3>Token排行 Top10（7天）</h3><table id=tokenTable><tr><th>#</th><th>用户</th><th>Token(万)</th></tr></table></div></div>
 <div class=r>
 <div class=b><h3>24h请求趋势</h3><div style=height:250px><canvas id=c1></canvas></div></div>
-<div class=b><h3>模型分布</h3><div style=height:250px><canvas id=c2></canvas></div></div>
+<div class=b><h3>30天Token使用量趋势</h3><div style=height:250px><canvas id=c2></canvas></div></div>
 </div>
 <div class=r>
 <div class=b><h3>话题分布（7天）</h3><div style=height:300px><canvas id=c3></canvas></div></div>
@@ -94,8 +94,8 @@ async function load(){
     if(d.trend_labels&&d.trend_labels.length){
       chart1=new Chart(document.getElementById('c1'),{type:'line',data:{labels:d.trend_labels,datasets:[{label:'请求',data:d.trend_data,borderColor:'#3b82f6',tension:0.3,fill:true,backgroundColor:'rgba(59,130,246,0.1)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#94a3b8',maxTicksLimit:10}},y:{ticks:{color:'#94a3b8'}}}}});
     }
-    if(d.model_labels&&d.model_labels.length){
-      chart2=new Chart(document.getElementById('c2'),{type:'pie',data:{labels:d.model_labels,datasets:[{data:d.model_data,backgroundColor:['#3b82f6','#22c55e','#f59e0b','#ef4444','#a855f7','#14b8a6']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#94a3b8',padding:10}}}}});
+    if(d.token_trend_labels&&d.token_trend_labels.length){
+      chart2=new Chart(document.getElementById('c2'),{type:'line',data:{labels:d.token_trend_labels,datasets:[{label:'Token(万)',data:d.token_trend_data.map(function(v){return Math.round(v/10000)}),borderColor:'#22c55e',tension:0.3,fill:true,backgroundColor:'rgba(34,197,94,0.1)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#94a3b8',maxTicksLimit:15}},y:{ticks:{color:'#94a3b8'}}}}});
     }
     if(d.topic_labels&&d.topic_labels.length){
       chart3=new Chart(document.getElementById('c3'),{type:'pie',data:{labels:d.topic_labels,datasets:[{data:d.topic_data,backgroundColor:['#f59e0b','#3b82f6','#22c55e','#a855f7','#ef4444','#14b8a6','#f97316','#06b6d4','#ec4899','#84cc16','#6366f1','#d946ef','#0ea5e9','#10b981','#eab308']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#94a3b8',padding:8,boxWidth:12,font:{size:11}}}}}});
