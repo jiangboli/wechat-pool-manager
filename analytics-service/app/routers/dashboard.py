@@ -60,10 +60,10 @@ async def get_dashboard():
         c.execute("""
             SELECT DISTINCT ON (label) label, balance
             FROM analytics.balance_snapshots
-            WHERE snapshot_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai'
-            ORDER BY label, snapshot_at ASC
+            WHERE snapshot_at < date_trunc('day', now() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai'
+            ORDER BY label, snapshot_at DESC
         """)
-        today_first = {r[0]: float(r[1]) for r in c.fetchall()}
+        yesterday_latest = {r[0]: float(r[1]) for r in c.fetchall()}
 
         c.execute("""
             SELECT DISTINCT ON (label) label, balance
@@ -80,7 +80,7 @@ async def get_dashboard():
             balances_list = []
             for label, info in sorted(latest_rows.items()):
                 bal = info["balance"]
-                today_cost = max(0.0, round((today_first.get(label, bal) - bal), 2))
+                today_cost = max(0.0, round((yesterday_latest.get(label, bal) - bal), 2))
                 month_cost = max(0.0, round((month_first.get(label, bal) - bal), 2))
                 total_balance += bal
                 total_today += today_cost
