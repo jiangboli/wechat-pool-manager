@@ -11,6 +11,7 @@ h1{font-size:22px;margin-bottom:20px;color:#f1f5f9}
 .c .n{font-size:30px;font-weight:700;margin-top:6px}
 .c .l{font-size:13px;color:#94a3b8}
 .r{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px}
+.r3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:24px}
 .b{background:#1e293b;border-radius:12px;padding:20px}
 .b h3{font-size:14px;margin-bottom:12px;color:#cbd5e1}
 table{width:100%;border-collapse:collapse;font-size:13px}
@@ -19,12 +20,12 @@ th{color:#64748b;font-weight:500;background:#0f172a;border-radius:6px}
 td{font-family:monospace}
 .tg{cursor:pointer;user-select:none}
 .tg:hover{color:#3b82f6}
-.ht{overflow-x:auto}
-.ht table{font-size:11px;text-align:center}
-.ht th,.ht td{padding:2px 0;min-width:24px;border:1px solid #1e293b;text-align:center;font-size:11px;font-family:monospace}
-.ht th.hour{color:#94a3b8;font-size:9px;font-weight:400;background:#0f172a}
-.ht td.day{color:#94a3b8;font-size:10px;text-align:right;padding-right:4px;background:#0f172a;white-space:nowrap}
-@media(max-width:768px){.g{grid-template-columns:repeat(2,1fr)}.g2{grid-template-columns:repeat(4,1fr)}.r{grid-template-columns:1fr}}
+.ht{overflow-x:auto;padding:8px 0}
+.ht table{font-size:14px;text-align:center;width:auto;min-width:100%}
+.ht th,.ht td{padding:6px 4px;min-width:40px;border:1px solid #334155;text-align:center;font-size:13px;font-family:monospace;line-height:1.8}
+.ht th.hour{color:#94a3b8;font-size:11px;font-weight:500;background:#0f172a;position:sticky;top:0;z-index:1}
+.ht td.day{color:#94a3b8;font-size:12px;text-align:right;padding-right:8px;background:#0f172a;white-space:nowrap;min-width:60px;position:sticky;left:0;z-index:1}
+@media(max-width:768px){.g{grid-template-columns:repeat(2,1fr)}.g2{grid-template-columns:repeat(4,1fr)}.r3{grid-template-columns:1fr}.r{grid-template-columns:1fr}}
 </style></head><body>
 <h1>Claw DO 看板 <span style=font-size:13px;color:#64748b id=updateTime></span></h1>
 <div class=g>
@@ -43,8 +44,9 @@ td{font-family:monospace}
 <div class=c><div class=l>💰 总余额</div><div class=n style=color:#fbbf24 id=totalBalance>-</div></div>
 <div class=c><div class=l>📉 今日消耗</div><div class=n style=color:#f87171 id=todayCost>-</div></div>
 </div>
-<div class=r><div class=b><h3>Token排行 Top10（今天）</h3><table id=reqTable><tr><th>#</th><th>用户</th><th>Token(万)</th></tr></table></div>
-<div class=b><h3>Token排行 Top10（7天）</h3><table id=tokenTable><tr><th>#</th><th>用户</th><th>Token(万)</th></tr></table></div></div>
+<div class=r3><div class=b><h3>Token排行 Top10（今天）</h3><table id=reqTable><tr><th>#</th><th>用户</th><th>Token(万)</th></tr></table></div>
+<div class=b><h3>Token排行 Top10（7天）</h3><table id=tokenTable><tr><th>#</th><th>用户</th><th>Token(万)</th></tr></table></div>
+<div class=b><h3>🗣️ 话痨榜 Top10（7天）</h3><table id=chattyTable><tr><th>#</th><th>用户</th><th>对话轮次</th></tr></table></div></div>
 <div class=r>
 <div class=b><h3>小时请求热力图（7天）</h3><div class=ht id=heatmapDiv></div></div>
 <div class=b><h3>30天Token使用量趋势</h3><div style=height:250px><canvas id=c2></canvas></div></div>
@@ -73,7 +75,6 @@ document.getElementById('balanceToggle').onclick=function(){
 function renderHeatmap(data){
   var div=document.getElementById('heatmapDiv');
   if(!data||!data.length){div.innerHTML='<div style=color:#64748b;padding:20px;text-align:center>暂无数据</div>';return}
-  // Group by day, find max
   var map={}, max=0, days=[], hours=Array.from({length:24},(_,i)=>i);
   data.forEach(function(r){
     var d=r[0],h=r[1],c=r[2];
@@ -135,28 +136,27 @@ async function load(){
     tt.innerHTML='<tr><th>#</th><th>用户</th><th>Token(万)</th></tr>';
     d.top_tok.forEach(function(r,i){tt.innerHTML+='<tr><td>'+(i+1)+'</td><td>'+r[0]+'</td><td>'+fmtWan(r[1])+'</td></tr>'});
 
-    // Heatmap
+    var ct=document.getElementById('chattyTable');
+    ct.innerHTML='<tr><th>#</th><th>用户</th><th>对话轮次</th></tr>';
+    d.top_chatty.forEach(function(r,i){ct.innerHTML+='<tr><td>'+(i+1)+'</td><td>'+r[0]+'</td><td>'+fmt(r[1])+'</td></tr>'});
+
     renderHeatmap(d.heatmap);
 
-    // Charts
     if(chart2)chart2.destroy();if(chart3)chart3.destroy();if(chart4)chart4.destroy();if(chart5)chart5.destroy();
 
     if(d.token_trend_labels&&d.token_trend_labels.length){
       chart2=new Chart(document.getElementById('c2'),{type:'line',data:{labels:d.token_trend_labels,datasets:[{label:'Token(万)',data:d.token_trend_data.map(function(v){return Math.round(v/10000)}),borderColor:'#22c55e',tension:0.3,fill:true,backgroundColor:'rgba(34,197,94,0.1)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#94a3b8',maxTicksLimit:15}},y:{ticks:{color:'#94a3b8'}}}}});
     }
 
-    // 容器健康饼图
     if(d.health_labels&&d.health_labels.length){
       var hc=['#22c55e','#f59e0b','#ef4444','#a855f7','#64748b'];
       chart3=new Chart(document.getElementById('c3'),{type:'pie',data:{labels:d.health_labels,datasets:[{data:d.health_data,backgroundColor:hc}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#94a3b8',padding:8,boxWidth:12,font:{size:11}}}}}});
     }
 
-    // DAU趋势
     if(d.dau_labels&&d.dau_labels.length){
       chart4=new Chart(document.getElementById('c4'),{type:'line',data:{labels:d.dau_labels,datasets:[{label:'DAU',data:d.dau_data,borderColor:'#a855f7',tension:0.3,fill:true,backgroundColor:'rgba(168,85,247,0.1)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#94a3b8',maxTicksLimit:15}},y:{ticks:{color:'#94a3b8',min:0}}}}});
     }
 
-    // 话题分布
     if(d.topic_labels&&d.topic_labels.length){
       chart5=new Chart(document.getElementById('c5'),{type:'pie',data:{labels:d.topic_labels,datasets:[{data:d.topic_data,backgroundColor:['#f59e0b','#3b82f6','#22c55e','#a855f7','#ef4444','#14b8a6','#f97316','#06b6d4','#ec4899','#84cc16','#6366f1','#d946ef','#0ea5e9','#10b981','#eab308']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#94a3b8',padding:8,boxWidth:12,font:{size:11}}}}}});
     }
