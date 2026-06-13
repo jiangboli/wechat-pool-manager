@@ -57,7 +57,7 @@ async def get_dashboard():
         data["top_chatty"] = [[r[0], r[1]] for r in c.fetchall()]
 
         # ── 小时热力图（7天，北京时）──
-        c.execute(f"SELECT to_char(created_at + INTERVAL '8 hours', 'MM-DD') as day, extract(hour from created_at + INTERVAL '8 hours')::int as hour, count(*) FROM analytics.proxy_api_calls WHERE created_at >= {BJ_START} - INTERVAL '7 days' GROUP BY 1, 2 ORDER BY 1, 2")
+        SELECT to_char(created_at + INTERVAL '8 hours', 'MM-DD') as day, extract(hour from created_at + INTERVAL '8 hours')::int as hour, count(*) FROM analytics.proxy_api_calls WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai' - INTERVAL '8 days' AND created_at < date_trunc('day', now() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai' GROUP BY 1, 2 ORDER BY 1, 2
         rows = c.fetchall()
         data["heatmap"] = [[r[0], r[1], r[2]] for r in rows]
 
