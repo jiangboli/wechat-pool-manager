@@ -10,6 +10,39 @@
   /home/data/{尾数}/{profile}/.hermes/   ← 尾数 = profile 编号末位 (0-9)
 """
 
+# 追梦坊技能——每次 write_config 时同步到容器 skills 目录
+# API key 由 pool-proxy 管理，此技能不含任何密钥
+DREAM_FOUNDRY_SKILL = """---
+name: dream-foundry
+description: 追梦坊AI — 多模态图片理解和视频生成。通过 pool-proxy 调用，不含 API key。
+trigger: 用户在对话中发送图片消息，或要求生成视频/动画内容
+---
+
+# 追梦坊 AI 技能
+
+所有请求通过 pool-proxy 转发，API key 在 proxy 层管理，本技能不含任何密钥。
+
+## 场景1：用户发图（核心场景）
+
+**当用户发送一张或多张图片时：**
+
+1. 默认行为：调 doubao 多模态模型，prompt 设为「描述这张图片的内容」
+2. 如果用户同时发了文字，用用户的文字作为 prompt 替代默认描述
+3. 如果用户后续追问，继续用 doubao 模型对话
+
+## 场景2：视频/图片生成
+
+当用户明确要求生成视频时：
+1. POST pool-proxy /v1/video/generations 提交任务
+2. GET pool-proxy /v1/video/generations/{task_id} 轮询，每10秒一次
+3. 完成时下载视频 URL 并推送给用户
+
+## 注意事项
+- API key 由 pool-proxy 管理，本技能不含任何密钥
+- 图片分析用 doubao-seed-2-0-lite-260215（豆包多模态模型）
+- 视频生成用 doubao-seedance-2.0-fast
+"""
+
 import asyncio
 import json
 import logging
@@ -264,6 +297,9 @@ send_message(target="origin", message="⏳ 已用时 2 分钟...")
         os.chown(agents_path, 1000, -1)
         logger.info("[%s] AGENTS.md 已写入", profile)
 
+        # 写入追梦坊 skill——新老容器自动获得图片理解和视频生成能力
+        self.write_skill(profile)
+
     def write_soul(self, profile: str, lobster_name: str = ""):
         """写入容器 ~/.hermes/SOUL.md + memories/（agent 身份/人格定义）。"""
         hdir = self.ensure_data_dir(profile)
@@ -301,6 +337,22 @@ send_message(target="origin", message="⏳ 已用时 2 分钟...")
         with open(mem_md_path, "w") as f:
             f.write(mem_content)
         logger.info("[%s] MEMORY.md 已同步 %s", profile, mem_md_path)
+
+    def write_skill(self, profile: str):
+        """写入追梦坊 skill 到容器 skills 目录，每次都覆盖。
+
+        新容器创建和老容器更新都用这个方法。API key 由 pool-proxy 管理，
+        skill 不含任何密钥。
+        """
+        hdir = self.ensure_data_dir(profile)
+        skill_dir = os.path.join(hdir, "skills", "dream-foundry")
+        os.makedirs(skill_dir, exist_ok=True)
+        skill_path = os.path.join(skill_dir, "SKILL.md")
+        with open(skill_path, "w") as f:
+            f.write(DREAM_FOUNDRY_SKILL)
+        os.chown(skill_path, 1000, -1)
+        os.chown(skill_dir, 1000, -1)
+        logger.info("[%s] skill dream-foundry 已写入 %s", profile, skill_path)
 
     # ── 容器生命周期 ────────────────────────────────────────────
 
