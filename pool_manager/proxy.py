@@ -882,7 +882,7 @@ async def create_video_generation(request: Request):
             "Content-Type": "application/json",
         }
         resp = await client.post(
-            f"{base_url}/v1/video/generations",
+            f"{base_url}/video/generations",
             json=body,
             headers=headers,
         )
@@ -920,7 +920,7 @@ async def get_video_generation(task_id: str):
         base_url = _get_base_url("dream-foundry")
         headers = {"Authorization": f"Bearer {api_key}"}
         resp = await client.get(
-            f"{base_url}/v1/video/generations/{task_id}",
+            f"{base_url}/video/generations/{task_id}",
             headers=headers,
         )
         return Response(
