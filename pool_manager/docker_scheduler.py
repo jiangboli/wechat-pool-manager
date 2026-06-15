@@ -14,23 +14,18 @@
 # API key 由 pool-proxy 管理，此技能不含任何密钥
 DREAM_FOUNDRY_SKILL = """---
 name: dream-foundry
-description: 追梦坊AI — 多模态图片理解和视频生成。通过 pool-proxy 调用，不含 API key。
-trigger: 用户在对话中发送图片消息，或要求生成视频/动画内容
+description: 追梦坊AI - 视频生成技能。图片分析已由 auxiliary vision 自动处理，不需要此 skill。
+trigger: 用户在对话中要求生成视频/动画内容
 ---
 
 # 追梦坊 AI 技能
 
-所有请求通过 pool-proxy 转发，API key 在 proxy 层管理，本技能不含任何密钥。
+## 图片分析说明
 
-## 场景1：用户发图（核心场景）
+图片分析不需要此 skill。系统已配置 auxiliary vision 模型
+（doubao-seed-2-0-lite-260215），发图时直接用 vision_analyze 即可。
 
-**当用户发送一张或多张图片时：**
-
-1. 默认行为：调 doubao 多模态模型，prompt 设为「描述这张图片的内容」
-2. 如果用户同时发了文字，用用户的文字作为 prompt 替代默认描述
-3. 如果用户后续追问，继续用 doubao 模型对话
-
-## 场景2：视频/图片生成
+## 视频/图片生成
 
 当用户明确要求生成视频时：
 1. POST pool-proxy /v1/video/generations 提交任务
@@ -39,7 +34,6 @@ trigger: 用户在对话中发送图片消息，或要求生成视频/动画内�
 
 ## 注意事项
 - API key 由 pool-proxy 管理，本技能不含任何密钥
-- 图片分析用 doubao-seed-2-0-lite-260215（豆包多模态模型）
 - 视频生成用 doubao-seedance-2.0-fast
 """
 
@@ -225,6 +219,13 @@ hooks_auto_accept: true
 security:
   tirith_enabled: false
 
+# 图片分析——通过 pool-proxy 调用 doubao 多模态模型
+# vision_analyze 工具自动使用此配置
+auxiliary:
+  vision:
+    provider: custom:pool-proxy
+    model: doubao-seed-2-0-lite-260215
+
 # 显示控制——关闭所有内置中间消息噪音
 display:
   interim_assistant_messages: false
@@ -302,16 +303,15 @@ send_message(target="origin", message="⏳ 已用时 2 分钟...")
 ## 规则一：用户发图（不带文字）
 
 **用户只发图不说话** → 必须按以下流程处理：
-1. 用 `skill_view(name="dream-foundry")` 加载追梦坊技能
-2. 追梦坊技能会调用 doubao 多模态模型分析图片内容
-3. 默认 prompt 为「描述这张图片的内容」
-4. 把分析结果回复给用户
+1. 用 `vision_analyze` 工具分析图片，question 设为「描述这张图片的内容」
+2. 系统会自动调用 doubao 多模态模型处理
+3. 把分析结果回复给用户
 
 ## 规则二：用户发图+文字
 
 **用户发图同时发了文字** → 必须按以下流程处理：
-1. 用 `skill_view(name="dream-foundry")` 加载追梦坊技能
-2. 用用户发的文字作为 prompt，让 doubao 多模态模型分析图片
+1. 用 `vision_analyze` 工具分析图片，用用户发的文字作为 question
+2. 系统会自动调用 doubao 多模态模型处理
 3. 把分析结果回复给用户
 
 ## 规则三：用户要求生成视频
@@ -322,8 +322,7 @@ send_message(target="origin", message="⏳ 已用时 2 分钟...")
 3. 提交任务后轮询完成状态
 4. 完成后把视频推送给用户
 
-> **重要：** 所有图片分析都通过 pool-proxy 代理调用 doubao 多模态模型完成，不需要使用 vision_analyze 等内置工具。用 `skill_view()` 加载 skill 后按里面的步骤操作。
->"""
+> **注意：** 图片分析不需要加载 skill，直接用 `vision_analyze` 工具即可。系统配置了 auxiliary vision 模型（doubao 多模态），会自动处理图片内容。"""
         with open(agents_path, "w") as f:
             f.write(agents_content)
         os.chown(agents_path, 1000, -1)
