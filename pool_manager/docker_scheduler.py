@@ -291,7 +291,39 @@ enabled_toolsets:
 使用 send_message 工具发送进度消息：
 ```
 send_message(target="origin", message="⏳ 已用时 2 分钟...")
-```"""
+```
+
+---
+
+# 图片处理规则（必读）
+
+当你收到用户消息且该消息包含图片时：
+
+## 规则一：用户发图（不带文字）
+
+**用户只发图不说话** → 必须按以下流程处理：
+1. 用 `skill_view(name="dream-foundry")` 加载追梦坊技能
+2. 追梦坊技能会调用 doubao 多模态模型分析图片内容
+3. 默认 prompt 为「描述这张图片的内容」
+4. 把分析结果回复给用户
+
+## 规则二：用户发图+文字
+
+**用户发图同时发了文字** → 必须按以下流程处理：
+1. 用 `skill_view(name="dream-foundry")` 加载追梦坊技能
+2. 用用户发的文字作为 prompt，让 doubao 多模态模型分析图片
+3. 把分析结果回复给用户
+
+## 规则三：用户要求生成视频
+
+当用户要求生成视频/动画时：
+1. 用 `skill_view(name="dream-foundry")` 加载追梦坊技能
+2. 技能中定义了视频生成的 API 调用方式
+3. 提交任务后轮询完成状态
+4. 完成后把视频推送给用户
+
+> **重要：** 所有图片分析都通过 pool-proxy 代理调用 doubao 多模态模型完成，不需要使用 vision_analyze 等内置工具。用 `skill_view()` 加载 skill 后按里面的步骤操作。
+>"""
         with open(agents_path, "w") as f:
             f.write(agents_content)
         os.chown(agents_path, 1000, -1)
