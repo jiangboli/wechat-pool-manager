@@ -466,21 +466,22 @@ def _select_key(provider: str) -> Optional[str]:
 
 
 def _get_provider_for_model(model: str) -> str:
-    """根据模型名判断使用哪个 provider。"""
-    # 尝试从 config.yaml 读取
-    try:
-        import yaml
-        cfg_path = os.path.expanduser("~/.hermes/config.yaml")
-        if os.path.exists(cfg_path):
-            with open(cfg_path) as f:
-                cfg = yaml.safe_load(f) or {}
-            model_cfg = cfg.get("model", {})
-            if isinstance(model_cfg, str):
-                return model_cfg
-            return model_cfg.get("provider", _config["default_provider"])
-    except Exception:
-        pass
-    return _config["default_provider"]
+    """根据模型名判断使用哪个 provider。
+
+    显式路由表，替代原先读宿主机 config.yaml 的方式。
+    """
+    MODEL_ROUTES = {
+        # 现有 LLM
+        "deepseek-v4-flash": "deepseek",
+        "deepseek-chat": "deepseek",
+        "deepseek-reasoner": "deepseek",
+        # 追梦坊多模态 LLM
+        "doubao-seed-2-0-lite-260215": "dream-foundry",
+        "doubao-seed-2-0-pro-260215": "dream-foundry",
+        # 追梦坊视频生成（chat completions 做二次验证用）
+        "doubao-seedance-2.0-fast": "dream-foundry",
+    }
+    return MODEL_ROUTES.get(model, _config["default_provider"])
 
 
 def _get_base_url(provider: str) -> str:
@@ -488,6 +489,7 @@ def _get_base_url(provider: str) -> str:
     base_urls = {
         "deepseek": "https://api.deepseek.com/v1",
         "alibaba": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "dream-foundry": "https://ai-api.dreamf.art/v1",
     }
     try:
         import yaml
@@ -839,6 +841,100 @@ async def proxy_chat_completions_only(request: Request):
             media_type="application/json",
         )
     return await _do_proxy(request, body)
+
+
+# ── 视频生成路由 ────────────────────────────────────────────────────
+#
+# 直接透传到追梦坊 API，使用 dream-foundry provider 的 key
+# 同时挂到 router 和 chat_only_router 上，bot 容器可直接调用
+
+
+@router.post("/v1/video/generations")
+@chat_only_router.post("/v1/video/generations")
+async def create_video_generation(request: Request):
+    """提交视频生成任务。
+
+    透传到追梦坊视频生成 API（异步任务），返回 task_id 供轮询。
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return Response(
+            content=json.dumps({"error": "invalid json"}),
+            status_code=400,
+            media_type="application/json",
+        )
+
+    api_key = _select_key("dream-foundry")
+    if not api_key:
+        logger.warning("[video] dream-foundry 无可用 key")
+        return Response(
+            content=json.dumps({"error": "dream-foundry 无可用 key"}),
+            status_code=502,
+            media_type="application/json",
+        )
+
+    try:
+        client = _get_client()
+        base_url = _get_base_url("dream-foundry")
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        resp = await client.post(
+            f"{base_url}/v1/video/generations",
+            json=body,
+            headers=headers,
+        )
+        return Response(
+            content=resp.text,
+            status_code=resp.status_code,
+            media_type="application/json",
+        )
+    except Exception as e:
+        logger.warning("[video] 提交视频生成失败: %s", e)
+        return Response(
+            content=json.dumps({"error": f"提交视频生成失败: {e}"}),
+            status_code=502,
+            media_type="application/json",
+        )
+
+
+@router.get("/v1/video/generations/{task_id}")
+@chat_only_router.get("/v1/video/generations/{task_id}")
+async def get_video_generation(task_id: str):
+    """查询视频生成任务状态。
+
+    轮询追梦坊视频生成进度，直到完成或失败。
+    """
+    api_key = _select_key("dream-foundry")
+    if not api_key:
+        return Response(
+            content=json.dumps({"error": "dream-foundry 无可用 key"}),
+            status_code=502,
+            media_type="application/json",
+        )
+
+    try:
+        client = _get_client()
+        base_url = _get_base_url("dream-foundry")
+        headers = {"Authorization": f"Bearer {api_key}"}
+        resp = await client.get(
+            f"{base_url}/v1/video/generations/{task_id}",
+            headers=headers,
+        )
+        return Response(
+            content=resp.text,
+            status_code=resp.status_code,
+            media_type="application/json",
+        )
+    except Exception as e:
+        logger.warning("[video] 查询视频生成状态失败: %s", e)
+        return Response(
+            content=json.dumps({"error": f"查询失败: {e}"}),
+            status_code=502,
+            media_type="application/json",
+        )
 
 
 # ── 管理 API ────────────────────────────────────────────────────────
