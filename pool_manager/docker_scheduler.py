@@ -457,10 +457,20 @@ send_message(target="origin", message="⏳ 已用时 2 分钟...")
                 },
             )
             logger.info("[%s] 容器 %s 已创建 (id=%s)", profile, name, container.short_id)
-            return True
         except DockerException as e:
             logger.error("[%s] 创建容器失败: %s", profile, e)
             return False
+
+        # 容器启动后安装自定义 skills——等 Hermes 装完默认 skill 再叠加
+        # 这样自定义 skill（dream-foundry 等）和 Hermes 默认 skill 共存
+        try:
+            import time
+            time.sleep(5)  # 等容器启动完毕
+            self.write_skill(profile)
+        except Exception as e:
+            logger.warning("[%s] 安装自定义 skill 失败（不阻塞）: %s", profile, e)
+
+        return True
 
     def start_container(self, profile: str) -> bool:
         """启动已存在的容器。"""
