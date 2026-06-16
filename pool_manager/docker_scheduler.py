@@ -316,11 +316,13 @@ send_message(target="origin", message="⏳ 已用时 2 分钟...")
 
 ## 规则三：用户要求生成视频
 
-当用户要求生成视频/动画时：
-1. 用 `skill_view(name="dream-foundry")` 加载追梦坊技能
-2. 技能中定义了视频生成的 API 调用方式
-3. 提交任务后轮询完成状态
-4. 完成后把视频推送给用户
+当用户明确要求生成视频/动画时，直接执行以下操作：
+1. 调用 pool-proxy 的 POST /v1/video/generations 接口提交任务
+   - URL: `http://pool-proxy:8767/v1/video/generations`
+   - 参数包含用户描述的视频内容
+2. 提交后会返回 task_id
+3. 每10秒用 task_id 轮询 GET /v1/video/generations/{task_id}
+4. 完成时获取视频 URL 并推送给用户
 
 > **注意：** 图片分析不需要加载 skill，直接用 `vision_analyze` 工具即可。系统配置了 auxiliary vision 模型（doubao 多模态），会自动处理图片内容。"""
         with open(agents_path, "w") as f:
@@ -328,8 +330,10 @@ send_message(target="origin", message="⏳ 已用时 2 分钟...")
         os.chown(agents_path, 1000, -1)
         logger.info("[%s] AGENTS.md 已写入", profile)
 
-        # 写入追梦坊 skill——新老容器自动获得图片理解和视频生成能力
-        self.write_skill(profile)
+        # AGENTS.md 已包含图片处理和视频生成的完整指令
+        # 不需要单独写 skill 文件——技能放在 skills/ 会阻止 Hermes 安装默认技能
+        # 图片分析通过 auxiliary.vision 配置 + vision_analyze 工具自动处理
+        # 视频生成步骤已写在上面的 AGENTS.md 中
 
     def write_soul(self, profile: str, lobster_name: str = ""):
         """写入容器 ~/.hermes/SOUL.md + memories/（agent 身份/人格定义）。"""
