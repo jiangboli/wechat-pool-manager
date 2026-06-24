@@ -33,3 +33,23 @@ def close_pool():
     if _pool:
         _pool.closeall()
         _pool = None
+
+def ensure_schema(conn):
+    """幂等建表，每次启动时调用"""
+    c = conn.cursor()
+    c.execute("CREATE SCHEMA IF NOT EXISTS analytics")
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS analytics.balance_deposits (
+            id SERIAL PRIMARY KEY,
+            label VARCHAR(100) NOT NULL,
+            amount DECIMAL(12,2) NOT NULL,
+            deposited_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            note VARCHAR(200)
+        )
+    """)
+    c.execute("""
+        CREATE INDEX IF NOT EXISTS idx_balance_deposits_label_time
+        ON analytics.balance_deposits(label, deposited_at DESC)
+    """)
+    conn.commit()
+    c.close()

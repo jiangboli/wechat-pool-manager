@@ -116,6 +116,23 @@ async def get_dashboard():
         """)
         month_first = {r[0]: float(r[1]) for r in c.fetchall()}
 
+        # ── 入金查询 ──
+        c.execute(f"""
+            SELECT label, COALESCE(SUM(amount), 0)
+            FROM analytics.balance_deposits
+            WHERE deposited_at >= {BJ_START}
+            GROUP BY label
+        """)
+        today_deposits = {r[0]: float(r[1]) for r in c.fetchall()}
+
+        c.execute(f"""
+            SELECT label, COALESCE(SUM(amount), 0)
+            FROM analytics.balance_deposits
+            WHERE deposited_at >= date_trunc('month', now() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai'
+            GROUP BY label
+        """)
+        month_deposits = {r[0]: float(r[1]) for r in c.fetchall()}
+
         if latest_rows:
             total_balance = 0.0
             total_today = 0.0
@@ -123,8 +140,15 @@ async def get_dashboard():
             balances_list = []
             for label, info in sorted(latest_rows.items()):
                 bal = info["balance"]
-                today_cost = max(0.0, round((yesterday_latest.get(label, bal) - bal), 2))
-                month_cost = max(0.0, round((month_first.get(label, bal) - bal), 2))
+                # 消耗 = 基线余额 + 期内入金 - 当前余额
+                today_base = yesterday_latest.get(label, bal)
+                today_dep = today_deposits.get(label, 0)
+                today_cost = max(0.0, round((today_base + today_dep - bal), 2))
+
+                month_base = month_first.get(label, bal)
+                month_dep = month_deposits.get(label, 0)
+                month_cost = max(0.0, round((month_base + month_dep - bal), 2))
+
                 total_balance += bal
                 total_today += today_cost
                 total_month += month_cost

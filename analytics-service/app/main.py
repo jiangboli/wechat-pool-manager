@@ -5,13 +5,19 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
-from database import init_pool, close_pool
+from database import init_pool, close_pool, ensure_schema
 from routers import dashboard, health
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_pool()
+    from database import get_conn, put_conn
+    conn = get_conn()
+    try:
+        ensure_schema(conn)
+    finally:
+        put_conn(conn)
     yield
     close_pool()
 
