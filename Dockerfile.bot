@@ -32,6 +32,13 @@ RUN printf '%s\n' \
     '5. 用户回复消息后停止进度报告' \
     > /home/hermes/AGENTS.md
 
+# 写入 scheduled-push skill + 管理脚本
+RUN mkdir -p /home/hermes/.hermes/skills/scheduled-push /home/hermes/.hermes/scripts/scheduled
+COPY skills/scheduled-push/SKILL.md /home/hermes/.hermes/skills/scheduled-push/SKILL.md
+COPY scripts/scheduled/manage_stocks.py /home/hermes/.hermes/scripts/scheduled/manage_stocks.py
+COPY scripts/scheduled/stocks_batch.py /home/hermes/.hermes/scripts/scheduled/stocks_batch.py
+RUN echo '[]' > /home/hermes/.hermes/scripts/scheduled/stocks.json
+
 # 默认 CMD（启动 Hermes Gateway）
 COPY start-hermes.py /app/start-hermes.py
 
