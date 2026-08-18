@@ -18,9 +18,9 @@
 set -euo pipefail
 
 # ── 默认值 ──────────────────────────────────────────────────────────────
-TOTAL=100
+TOTAL=500
 HOT_POOL=5
-MAX_BOUND=80
+MAX_BOUND=300
 PORT=8765
 PREFIX="weixin-"
 HOST="0.0.0.0"
